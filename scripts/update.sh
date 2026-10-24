@@ -3,8 +3,8 @@ set -euo pipefail
 umask 077
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MODE="${1:---apply}"
-if [[ "$EUID" -eq 0 || "$#" -gt 1 || ( "$MODE" != --apply && "$MODE" != --check && "$MODE" != --recover ) ]]; then
-  echo '以普通用户运行 bash scripts/update.sh [--apply|--check|--recover]。升级前请断开 VPN 并退出 App。' >&2
+if [[ "$EUID" -eq 0 || "$#" -gt 1 || ( "$MODE" != --apply && "$MODE" != --check && "$MODE" != --recover && "$MODE" != --cleanup ) ]]; then
+  echo '以普通用户运行 bash scripts/update.sh [--apply|--check|--recover|--cleanup]。升级前请断开 VPN 并退出 App。' >&2
   exit 1
 fi
 
@@ -15,7 +15,7 @@ mkdir -p "$STAGE/scripts" "$STAGE/service" "$STAGE/dist"
 for name in install.py update.py; do
   cp "$ROOT/scripts/$name" "$STAGE/scripts/$name"
 done
-if [[ "$MODE" != --recover ]]; then
+if [[ "$MODE" != --recover && "$MODE" != --cleanup ]]; then
   for name in control.py connect.py setup.py vpnc-script; do
     cp "$ROOT/service/$name" "$STAGE/service/$name"
   done

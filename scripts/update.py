@@ -489,6 +489,36 @@ def apply(uid):
         finish_cleanup(transaction)
 
 
+def cleanup(uid):
+    if os.geteuid() != 0: raise RuntimeError('root required')
+    lock_path = install.TARGET / 'control.lock'
+    if not stat.S_ISREG(install.safe_installed(lock_path).st_mode):
+        raise RuntimeError('unsafe update lock')
+    with lock_path.open('a') as lock:
+        try: fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError: raise RuntimeError('another VPN operation is in progress')
+        if transaction_path().exists() or transaction_path().is_symlink():
+            raise RuntimeError('unfinished update transaction; recover before cleanup')
+        managed_hashes(installed_map())
+        app_hash = install.code_signature(APP, 'local.snvpn.desktop')
+        install.code_signature(APP / install.APP_HELPER, install.HELPER_LABEL)
+        policy = plistlib.loads(install.HELPER_POLICY.read_bytes())
+        if (policy.get('userID') != uid or policy.get('clientRequirement') !=
+                'identifier "local.snvpn.desktop" and cdhash H"' + app_hash + '"'
+                or install.HELPER.read_bytes() != (APP / install.APP_HELPER).read_bytes()):
+            raise RuntimeError('installed helper verification failed')
+        install.validate_plist(install.DAEMON)
+        verify_credentials(credential_commands())
+        paths = [install.TARGET / name for name in RESIDUE
+                 if (install.TARGET / name).exists() or (install.TARGET / name).is_symlink()]
+        for path in paths: validate_owned_tree(path)
+        for path in paths:
+            if path.is_dir(): shutil.rmtree(path)
+            else: path.unlink()
+        print(json.dumps({'removed_legacy_residue': [p.name for p in paths],
+                          'installed_components_changed': False}))
+
+
 def run_as_user(uid, argument):
     cmd = ['/bin/launchctl', 'asuser', str(uid), '/usr/bin/sudo', '-u', '#' + str(uid),
            str(APP / 'Contents/MacOS/SN VPN'), *argument]
@@ -496,10 +526,13 @@ def run_as_user(uid, argument):
 
 
 def main(argv):
-    if len(argv) != 2 or argv[0] not in ('--check', '--apply', '--recover') or not argv[1].isdecimal() or not 0 < int(argv[1]) < 2**32 - 1:
-        raise RuntimeError('usage: update.py --check|--apply|--recover UID')
+    if len(argv) != 2 or argv[0] not in ('--check', '--apply', '--recover', '--cleanup') or not argv[1].isdecimal() or not 0 < int(argv[1]) < 2**32 - 1:
+        raise RuntimeError('usage: update.py --check|--apply|--recover|--cleanup UID')
     uid = int(argv[1])
     if argv[0] == '--check': return 0 if check(uid) else 1
+    if argv[0] == '--cleanup':
+        cleanup(uid)
+        return 0
     if argv[0] == '--recover':
         recover(uid)
         return 0

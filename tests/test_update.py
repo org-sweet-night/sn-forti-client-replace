@@ -172,6 +172,21 @@ class UpdateCheckTests(unittest.TestCase):
         self.assertEqual(outside.read_text(), 'preserve')
         self.assertFalse(update.transaction_path().exists())
 
+    def test_cleanup_only_removes_known_residue_and_preserves_components(self):
+        self._apply_patches()
+        update.apply(501)
+        backup = self.target / 'app-upgrade-backup'; backup.mkdir()
+        (backup / 'old').write_text('obsolete')
+        unknown = self.target / 'unrelated'; unknown.write_text('keep')
+        before = update.managed_hashes(update.installed_map())
+        with patch.object(update.install, 'validate_plist'), patch('sys.stdout'), \
+             patch.object(update, 'vpn_idle', side_effect=AssertionError('cleanup must not stop VPN')):
+            update.cleanup(501)
+            update.cleanup(501)
+        self.assertEqual(update.managed_hashes(update.installed_map()), before)
+        self.assertFalse(backup.exists())
+        self.assertEqual(unknown.read_text(), 'keep')
+
     def test_health_failure_rolls_back_runtime_and_app(self):
         self._apply_patches()
         (self.target / 'runtime/openconnect').write_text('old runtime')
