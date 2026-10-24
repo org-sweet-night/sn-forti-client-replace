@@ -36,6 +36,8 @@ python3 scripts/setup-update-signing.py --create
 
 官方 `generate_keys` 将私钥保存在当前用户登录钥匙串，专用 account 为 `local.snvpn.release-signing`。脚本只把公钥写入 `app/update-config.json`，不导出私钥、不覆盖不同的已固定公钥。保管好钥匙串备份；无 Apple Developer ID 回退链时，丢失密钥不能靠随意换公钥继续更新已有客户端。
 
+需要文件备份时，须经维护者明确授权后，使用官方 `generate_keys --account local.snvpn.release-signing -x` 导出到钥匙串以外的安全位置，例如 `~/.ssh/sn-forti-client-replace-update-ed25519.key`，权限设为 `600`。它是 Sparkle 的私钥格式，不是 SSH 登录密钥；公钥可另存为同名 `.pub`。迁移新 Mac 时用 `generate_keys --account local.snvpn.release-signing -f` 导入私钥，再运行 `setup-update-signing.py --check` 核对项目公钥。私钥文件不进入源码仓库、安装包或 GitHub 资产。
+
 未设置永久公钥时，本地构建的在线更新明确禁用，发布打包拒绝继续。通过 `SNVPN_UPDATE_CONFIG` 指定临时配置的构建标记为测试构建，也不能发布。
 
 ## 发布一个更新
