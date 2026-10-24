@@ -156,7 +156,7 @@ def helper_launch_state():
     return loaded, states[values[0]]
 
 
-def helper_install(app_arg, uid_arg):
+def helper_install(app_arg, uid_arg, already_locked=False):
     if not uid_arg.isdecimal() or not 0 < int(uid_arg) < 2**32 - 1:
         raise RuntimeError('invalid user id')
     uid = int(uid_arg)
@@ -178,11 +178,7 @@ def helper_install(app_arg, uid_arg):
 
     lock_path = TARGET / 'control.lock'
     safe_installed(lock_path)
-    with lock_path.open('a') as lock:
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            raise RuntimeError('another VPN operation is in progress')
+    def install_locked():
         loaded, disabled = helper_launch_state()
         paths = (HELPER, HELPER_POLICY, HELPER_DAEMON)
         previous = {}
@@ -232,6 +228,15 @@ def helper_install(app_arg, uid_arg):
                 subprocess.run(['/bin/launchctl', 'disable', 'system/' + HELPER_LABEL],
                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             raise
+    if already_locked:
+        install_locked()
+    else:
+        with lock_path.open('a') as lock:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                raise RuntimeError('another VPN operation is in progress')
+            install_locked()
 
 
 def upgrade():

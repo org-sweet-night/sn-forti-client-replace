@@ -14,7 +14,7 @@ FortiReplace 使用自带的 OpenConnect 连接 Fortinet / FortiGate SSL VPN，�
 app/           macOS App、XPC 助手、应用构建脚本与版本计数
 service/       VPN 后台 Python 源码与 vpnc-script
 helpers/       钥匙串和睡眠设置工具的 Swift 源码
-scripts/       安装器、安装入口和运行依赖准备脚本
+scripts/       安装器、完整升级/核验入口和运行依赖准备脚本
 tests/         离线测试
 docs/          第三方组件说明
 LICENSES/      第三方许可证原文
@@ -128,28 +128,44 @@ bash app/build.sh
 
 产物为 `dist/SN VPN.app`，其中包含签名后的受限助手。构建会执行 App 与助手自检，并校验代码签名。生成的二进制、运行时和本机恢复资料不会提交到仓库。
 
-### 已有安装的维护
+### 已有安装的升级与清理
 
-`scripts/install.sh` 仅用于全新安装。已有安装须先退出 App，按改动范围维护：
-
-- 仅更新 App：用 `dist/SN VPN.app` 替换系统 App，并重新安装助手。助手授权绑定 App 签名，即使助手源码未变，也需要同步安装。
-- 更新控制逻辑或迁移旧启动项：先执行 `sudo /usr/bin/python3 -I scripts/install.py --upgrade`。该入口只更新 `service/control.py`、迁移旧服务定义，不更新 `service/connect.py`、`service/setup.py`、OpenConnect 或其他运行依赖。
-- 更换运行引擎或其他运行代码：当前没有完整的一键升级入口，不能把 `--upgrade` 视为整个运行环境升级。
-
-系统 App 替换后，安装并检查助手：
+`bash scripts/install.sh` 仅用于全新安装。已有安装使用统一升级入口；先准备本次发布的运行依赖与 App：
 
 ```bash
-sudo /usr/bin/python3 -I scripts/install.py --install-helper "/Applications/SN VPN.app" "$(id -u)"
-"/Applications/SN VPN.app/Contents/MacOS/SN VPN" --helper-check
+bash scripts/prepare-runtime.sh
+bash app/build.sh
 ```
 
-检查通过后移除旧版应用副本；保留连接配置与钥匙串凭据。退出 App 和上述助手更新不会主动断开已有 VPN 隧道。若替换或安装失败，应恢复匹配的 App 与助手后再操作 VPN。
+只读核验已安装版本与当前发布产物，允许 VPN 运行时执行：
 
-全新安装中途失败时，先检查已完成的步骤。`--initialize` 只用于尚未安装的环境，不要对已有安装重复初始化；它创建待连接服务，不读取 FortiClient 配置，也不连接 VPN。
+```bash
+bash scripts/update.sh --check
+```
 
-App 与助手相互校验指定版本的代码签名，助手还校验调用账号。**更新 App 时必须同时更新助手**，版本不匹配时会拒绝操作。助手不提供任意命令执行接口。
+升级前先断开 VPN 并退出 SN VPN，再执行：
 
-首次连接、修改连接目标或执行“重新验证并连接”时，仍可能需要证书确认和 VPN 账号密码；这与反复输入 Mac 管理员密码是两回事。
+```bash
+bash scripts/update.sh
+```
+
+脚本请求 macOS 管理员授权，成功后重新打开 App。若开启了“自动连接”，打开 App 时会按原设置连接。脚本不主动断开 VPN；检测到活动隧道或运行中的 App 会拒绝升级。
+
+| 项目 | 升级行为 |
+| --- | --- |
+| App 与 XPC 助手 | 一同替换，校验签名、文件内容及实际助手通信 |
+| 后台代码与依赖 | 同步更新 Python 服务脚本、vpnc-script、钥匙串工具、OpenConnect 与动态库 |
+| 启动定义与助手授权 | 核对标签、路径及调用方签名，迁移已识别的旧服务定义 |
+| 连接配置、状态、钥匙串和登录偏好 | 保留，不作为垃圾删除 |
+| 旧应用与旧动态库 | 新版本验证通过后清理，避免文件叠加覆盖留下旧组件 |
+| 已识别的历史维护资料 | 只清理明确列入清单的旧备份目录、验收文件和安装日志 |
+| 未知文件 | 保留并报告，不按名称模糊匹配或全盘删除 |
+
+升级将发布输入暂存到系统临时目录，避免外置卷权限阻止管理员安装；正常成功或失败退出会清理该次暂存。事务备份在升级验证成功后删除；失败时恢复已替换组件。被强制终止或回滚失败留下的恢复资料不能当作垃圾直接删除。确认 VPN 已断开、App 已退出后，可执行 `bash scripts/update.sh --recover` 恢复；恢复失败会保留资料并明确报错。
+
+核验范围是本应用管理的安装文件、启动定义及明确的历史残留，不包含 macOS 自行维护的缓存、统一日志、崩溃报告或其他软件。系统中的有效配置、钥匙串和控制锁不是垃圾。
+
+底层 `scripts/install.py --initialize`、`--install-helper` 和 `--upgrade` 保留为维修入口；其中 `--upgrade` 只更新控制脚本和旧服务定义，不是完整升级。日常更新使用 `scripts/update.sh`，避免只替换 App 导致助手授权或运行依赖不一致。
 
 ## 版本与构建
 
