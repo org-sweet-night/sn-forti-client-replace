@@ -5,6 +5,7 @@ import json
 import io
 from pathlib import Path
 import plistlib
+import subprocess
 import tempfile
 import sys
 import unittest
@@ -29,6 +30,66 @@ packager = load('update_packager', 'package-update.py')
 
 
 class PublishingTests(unittest.TestCase):
+    def test_publish_draft_safe_creation_resume_and_immutable_boundaries(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output = root / 'signed'; output.mkdir()
+            archive = root / 'release.zip'; archive.write_bytes(b'archive')
+            archive.with_suffix('.zip.sha256').write_text('archive checksum')
+            for name in ['update.pkg', 'update.pkg.sha256', 'appcast.xml']:
+                (output / name).write_text(name)
+            notes = root / 'notes.md'; notes.write_text('notes')
+            assets = [archive, archive.with_suffix('.zip.sha256'), *sorted(output.iterdir())]
+            identity = {'apiUrl': 'https://api.github.com/repos/' + publish.REPO + '/releases/123',
+                        'isDraft': True, 'tagName': 'v1.0.13'}
+            remote = {'tag_name': 'v1.0.13', 'draft': True, 'assets': [
+                {'name': p.name, 'state': 'uploaded', 'digest': 'sha256:' + publish.digest(p)} for p in assets]}
+
+            for scenario in ['new', 'resume', 'published', 'mismatch', 'partial', 'create_failure', 'unexpected_asset']:
+                with self.subTest(scenario=scenario):
+                    discovered = dict(identity)
+                    if scenario == 'published': discovered['isDraft'] = False
+                    lookups = [subprocess.CompletedProcess([], 0, json.dumps(discovered), '')]
+                    if scenario in ('new', 'create_failure'):
+                        lookups.insert(0, subprocess.CompletedProcess([], 1, '', 'release not found\n'))
+                    uploaded = json.loads(json.dumps(remote))
+                    if scenario == 'mismatch': uploaded['assets'][0]['digest'] = 'sha256:wrong'
+                    if scenario == 'partial': uploaded['assets'].pop()
+                    if scenario == 'unexpected_asset': uploaded['assets'].append({'name': 'unexpected', 'state': 'uploaded', 'digest': 'sha256:other'})
+
+                    def command(*args):
+                        if args[:3] == ('gh', 'release', 'create') and scenario == 'create_failure':
+                            raise subprocess.CalledProcessError(1, args, stderr='upload failed')
+                        if args[:2] == ('gh', 'api'):
+                            self.assertNotIn('/releases/tags/', args[2])
+                            if args[2] == identity['apiUrl']: return json.dumps(uploaded)
+                            if args[2].endswith('/releases/latest'):
+                                return json.dumps(dict(remote, draft=False))
+                            self.fail('unexpected API endpoint')
+                        return ''
+
+                    with patch.object(publish.subprocess, 'run', side_effect=lookups) as lookup, \
+                         patch.object(publish, 'run', side_effect=command) as operation:
+                        if scenario in ('new', 'resume'):
+                            publish.publish(output, 'v1.0.13', archive, notes)
+                        else:
+                            with self.assertRaises((ValueError, subprocess.CalledProcessError)):
+                                publish.publish(output, 'v1.0.13', archive, notes)
+                        writes = [c.args[:3] for c in operation.call_args_list if c.args[:2] == ('gh', 'release')]
+                        self.assertEqual(sum(c == ('gh', 'release', 'create') for c in writes), int(scenario in ('new', 'create_failure')))
+                        self.assertEqual(sum(c == ('gh', 'release', 'edit') for c in writes), int(scenario in ('new', 'resume')))
+                        self.assertFalse(any(c == ('gh', 'release', 'upload') for c in writes))
+                        self.assertTrue(all('--json' in c.args[0] for c in lookup.call_args_list))
+
+    def test_draft_lookup_rejects_untrusted_api_url_and_lookup_errors(self):
+        bad = {'apiUrl': 'https://evil.test/releases/123', 'isDraft': True, 'tagName': 'v1.0.13'}
+        for result in [subprocess.CompletedProcess([], 0, json.dumps(bad), ''),
+                       subprocess.CompletedProcess([], 1, '', 'authentication failed')]:
+            with patch.object(publish.subprocess, 'run', return_value=result), patch.object(publish, 'run') as operation:
+                with self.assertRaises((RuntimeError, ValueError)):
+                    publish.release_for_tag('v1.0.13')
+                operation.assert_not_called()
+
     def test_feed_binds_build_full_package_and_escaped_notes(self):
         with tempfile.TemporaryDirectory() as temporary:
             package = Path(temporary) / 'SN-VPN-1.0.12-macOS-arm64.pkg'

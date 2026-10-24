@@ -134,22 +134,56 @@ def verify_prepared(output, version, package, tag, notes, account):
     run(tool, '--account', account, '--verify', appcast)
 
 
+def release_for_tag(tag):
+    # GitHub's /releases/tags endpoint does not reliably find draft releases.
+    result = subprocess.run(['gh', 'release', 'view', tag, '--repo', REPO,
+                             '--json', 'apiUrl,isDraft,tagName'],
+                            capture_output=True, text=True)
+    if result.returncode:
+        if result.returncode == 1 and result.stderr.strip().lower() == 'release not found':
+            return None
+        raise RuntimeError('could not inspect release; no release changes attempted')
+    value = json.loads(result.stdout)
+    if (value.get('tagName') != tag or not isinstance(value.get('isDraft'), bool)
+            or not re.fullmatch(r'https://api\.github\.com/repos/' + re.escape(REPO)
+                                + r'/releases/[1-9][0-9]*', value.get('apiUrl', ''))):
+        raise ValueError('unexpected release identity')
+    return value
+
+
+def verify_assets(remote, tag, expected):
+    assets = remote.get('assets', [])
+    actual = {asset['name']: asset.get('digest') for asset in assets if asset.get('state') == 'uploaded'}
+    if remote.get('tag_name') != tag or len(assets) != len(expected) or actual != expected:
+        raise ValueError('uploaded assets do not match; release retained without replacing assets')
+
+
 def publish(output, tag, archive, notes):
-    # Never replace published update assets: latest must refer to a complete immutable set.
-    existing = subprocess.run(['gh', 'release', 'view', tag, '--repo', REPO],
-                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    if existing.returncode == 0:
-        raise ValueError('release already exists; publish a new version rather than replacing signed assets')
-    run('git', '-C', ROOT, 'ls-remote', '--exit-code', 'origin', 'refs/tags/' + tag)
+    # Existing drafts are resumable only when their complete immutable asset set matches.
     assets = [archive, archive.with_suffix(archive.suffix + '.sha256'), *sorted(output.iterdir())]
-    run('gh', 'release', 'create', tag, '--repo', REPO, '--verify-tag', '--draft',
-        '--title', 'SN VPN ' + tag[1:], '--notes-file', notes, *assets)
-    remote = json.loads(run('gh', 'api', 'repos/' + REPO + '/releases/tags/' + tag))
     expected = {path.name: 'sha256:' + digest(path) for path in assets}
-    actual = {asset['name']: asset.get('digest') for asset in remote['assets'] if asset['state'] == 'uploaded'}
-    if any(actual.get(name) != value for name, value in expected.items()):
-        raise ValueError('uploaded assets do not match; release left as draft')
+    if len(assets) != 5 or len(expected) != 5:
+        raise ValueError('expected exactly five distinct release assets')
+    existing = release_for_tag(tag)
+    if existing is not None and not existing['isDraft']:
+        raise ValueError('release already published; publish a new version rather than replacing signed assets')
+    if existing is None:
+        run('git', '-C', ROOT, 'ls-remote', '--exit-code', 'origin', 'refs/tags/' + tag)
+        # On failure, retain any partial draft and let a later explicit invocation inspect it.
+        run('gh', 'release', 'create', tag, '--repo', REPO, '--verify-tag', '--draft',
+            '--title', 'SN VPN ' + tag[1:], '--notes-file', notes, *assets)
+        existing = release_for_tag(tag)
+    if existing is None or not existing['isDraft']:
+        raise ValueError('expected draft release; no assets changed')
+    remote = json.loads(run('gh', 'api', existing['apiUrl']))
+    if remote.get('draft') is not True:
+        raise ValueError('release is no longer a draft; no assets changed')
+    verify_assets(remote, tag, expected)
     run('gh', 'release', 'edit', tag, '--repo', REPO, '--draft=false', '--latest')
+    latest = json.loads(run('gh', 'api', 'repos/' + REPO + '/releases/latest'))
+    if latest.get('draft') is not False:
+        raise ValueError('published latest release verification failed')
+    verify_assets(latest, tag, expected)
 
 
 if __name__ == '__main__':
