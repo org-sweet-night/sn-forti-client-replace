@@ -1,9 +1,12 @@
 import base64
+import contextlib
 import importlib.util
 import json
+import io
 from pathlib import Path
 import plistlib
 import tempfile
+import sys
 import unittest
 from unittest.mock import patch
 import xml.etree.ElementTree as ET
@@ -22,6 +25,7 @@ def load(name, filename):
 publish = load('publish_update', 'publish-update.py')
 configure = load('configure_updates', 'configure-updates.py')
 setup = load('setup_signing', 'setup-update-signing.py')
+packager = load('update_packager', 'package-update.py')
 
 
 class PublishingTests(unittest.TestCase):
@@ -47,9 +51,12 @@ class PublishingTests(unittest.TestCase):
                 bundle.writestr('release/RELEASE.json', json.dumps(version))
                 bundle.writestr('release/dist/SN VPN.app/Contents/Info.plist', plistlib.dumps({'SUPublicEDKey': 'public'}))
             package.write_bytes(b'package')
-            metadata = dict(version, tag='v1.0.12', package_sha256=publish.digest(package), release_zip_sha256=publish.digest(archive))
             sidecar = package.with_suffix('.pkg.json')
-            sidecar.write_text(json.dumps(metadata))
+            with patch.object(packager, 'package', return_value=version), \
+                 patch.object(sys, 'argv', ['package-update.py', '--archive', str(archive), '--tag', 'v1.0.12', '--output', str(package)]), \
+                 contextlib.redirect_stdout(io.StringIO()):
+                packager.main()
+            self.assertTrue(sidecar.exists())
             self.assertEqual(publish.metadata(archive, package, 'v1.0.12')[0], version)
             with self.assertRaisesRegex(ValueError, 'binding'):
                 publish.metadata(archive, package, 'v1.0.13')

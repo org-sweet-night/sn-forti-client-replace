@@ -168,7 +168,7 @@ def main():
     manifest = package(archive, args.tag, output)
     metadata = {'tag': args.tag, 'version': manifest['version'], 'build': manifest['build'],
                 'minimum_macos': manifest['minimum_macos'], 'architecture': manifest['architecture'],
-                'release_zip_sha256': sha256(archive), 'pkg_sha256': sha256(output)}
+                'release_zip_sha256': sha256(archive), 'package_sha256': sha256(output)}
     if 'bundle_version' in manifest:
         metadata['bundle_version'] = manifest['bundle_version']
     sidecar.write_text(json.dumps(metadata, sort_keys=True, indent=2) + '\n')
