@@ -32,28 +32,9 @@ FortiReplace 使用自带的 OpenConnect 连接 Fortinet / FortiGate SSL VPN，�
 
 这项检查只覆盖上述探测条件，不代表所有内网服务、域名解析或业务系统均已验收。没有私网 DNS、禁用 DNS TCP 端口或采用其他 DNS 架构的网络，可能出现隧道已建立但界面仍提示连接异常的情况。
 
-## 未包含或尚未支持的功能
+## 支持范围
 
-| 功能 | 当前状态 |
-| --- | --- |
-| IPsec / IKEv1 / IKEv2 VPN | 未实现，连接类型限定为 Fortinet SSL VPN。 |
-| MFA / OTP / FortiToken / 额外验证码 | 没有交互式认证流程；检测到需要额外认证时停止，不会自动填写验证码或确认推送。 |
-| SAML、浏览器单点登录、外部身份提供方跳转 | 未实现。 |
-| 客户端证书、智能卡、PKCS#11 登录 | 没有对应的配置和认证入口；网关证书确认不等于客户端证书认证。 |
-| EMS 注册、集中管理、策略下发 | 未实现，不接入 EMS，也不接收企业统一策略。 |
-| ZTNA、设备姿态与合规检查 | 未实现，不能提供 EMS / ZTNA 标签、终端合规证明或替代网关要求的受管终端身份。 |
-| 杀毒、反恶意软件、勒索防护 | 未实现。 |
-| Web / 应用过滤、终端防火墙、沙箱和终端隔离等安全组件 | 未实现。 |
-| 多条 VPN 隧道同时运行 | 未实现，多配置用于选择和切换。 |
-| FortiClient 完整配置备份和配置同步 | 未实现；只导入可识别的本机 SSL VPN 连接名称、网关、端口和用户名，不导入密码、企业策略或其他安全组件。 |
-| 多个本机账号共用同一个助手授权 | 当前助手限定安装时授权的一个本机账号，切换账号需要管理员重新配置。 |
-| 自动卸载 FortiClient 或关闭它的全部启动项 | App 未提供此功能，需要单独管理系统启动项。 |
-| 应用内 Touch ID 确认开关 | 未实现。当前方案是首次安装授权、日常启停免重复输入管理员密码，系统授权方式由 macOS 决定。 |
-| 其他 VPN 厂商的协议 | 未提供配置入口。底层 OpenConnect 支持多协议不代表本项目已实现这些客户端功能。 |
-| IPv6 网关地址、完整 IPv6 验收 | 网关输入目前接受域名和 IPv4 字面地址，不接受 IPv6 字面地址；IPv6 隧道与路由未完成端到端验收。 |
-| Windows、Linux、Intel Mac 发布包 | 当前没有提供。 |
-
-如果接入要求包含 IPsec、MFA、SAML 或 EMS / ZTNA 合规校验，当前版本不满足这些要求。
+目前仅提供 Apple Silicon Mac 上的 Fortinet SSL VPN，使用用户名和密码登录，一次运行一条隧道。不支持 IPsec、MFA/OTP、SAML、客户端证书、EMS/ZTNA 和终端防护，也没有 Windows、Linux 或 Intel Mac 发布包。网关输入支持域名和 IPv4，完整 IPv6 尚未验收。
 
 ## 是否还需要 FortiClient
 
@@ -137,7 +118,7 @@ sudo /usr/bin/python3 -I install.py --install-helper "/Applications/SN VPN.app" 
 
 `--initialize` 创建运行环境、控制锁和待连接的服务定义，不读取 FortiClient 配置、不创建虚假的账号信息，也不启动隧道。实际连接信息在 App 保存，首次验证成功后才写入系统运行配置并保存钥匙串凭据。
 
-已有安装升级：先退出旧版 App 并保留恢复副本，运行 `sudo /usr/bin/python3 -I install.py --upgrade` 更新控制代码、迁移旧启动项，再替换 App，并执行上面的助手安装命令。该维护入口保留现有配置和钥匙串凭据，不主动重启当前隧道。
+已有安装升级：先退出旧版 App，运行 `sudo /usr/bin/python3 -I install.py --upgrade` 更新控制代码、迁移旧启动项，再用本次构建替换 App，并执行上面的助手安装命令；安装验证通过后移除旧版副本。该维护入口保留现有配置和钥匙串凭据，不主动重启当前隧道。
 
 App 与助手相互校验指定版本的代码签名，助手还校验调用账号。**更新 App 时必须同时更新助手**，版本不匹配时会拒绝操作。助手不提供任意命令执行接口。
 
@@ -145,21 +126,35 @@ App 与助手相互校验指定版本的代码签名，助手还校验调用账�
 
 旧版命令 `sudo /usr/bin/python3 -I install.py '<现有 FortiClient SSL VPN 配置名>'` 保留兼容，仅用于确实存在该配置的全新环境；它会验证账号并启动 VPN。通常应使用上面的独立安装流程。
 
-## 验证范围
+## 版本与构建
 
-已有验证包含离线控制、认证错误分类、配置切换与恢复、安装失败恢复、App 与助手自检，以及本机签名校验、助手调用、拒绝签名不匹配的调用方和助手空闲退出检查。助手升级过程中保留了既有 VPN 连接。
+菜单栏菜单底部、“退出”上方显示独立版本信息，上下各有分隔线，例如 `版本：1.0.84-abcdef11`。
 
-尚未完成全新 Mac 安装、重启后完整启动链路、所有网关版本、所有路由与业务系统、Intel Mac 或完整 IPv6 的验收。不要把这些未验证场景视为已支持。
+- 主版本在 `app/version.py` 中从 `1` 开始，仅在重大变化（例如新增 Windows、Linux 支持）时手动升级；开启新主版本时，将 `app/build-number` 重置为 `0`。
+- `app/build-number` 保存当前主版本的累计构建号，每次构建先加 1；失败的构建也占用该号，不回退复用。显示格式为 `主版本.构建号整除100.构建号余100-Git短哈希`。
+- build 84 显示 `1.0.84`，build 100 显示 `1.1.0`，build 184 显示 `1.1.84`，build 200 显示 `1.2.0`。
+- 哈希为构建源码的 Git 提交前 8 位。发布构建应从已提交的源码开始，构建号文件随发布提交，构建产物不入库。源码未提交时追加 `-dirty` 标记。
+- 原固定构建号为 5，新规则首次构建为 `1.0.6`。构建号不以 Git 提交数量计算。
 
-需要运行离线检查时，可执行以下命令；这些测试使用模拟服务和凭据，不会实际连接或断开 VPN：
+## 验证
+
+离线检查使用模拟服务和凭据，不会实际连接或断开 VPN：
 
 ```bash
-/usr/bin/python3 -m unittest test_control test_connect test_profiles test_install
+/usr/bin/python3 -m unittest discover
 ```
+
+`bash app/build.sh` 还执行 App、菜单和助手自检及代码签名校验。安装后可执行只读助手连通检查：
+
+```bash
+"/Applications/SN VPN.app/Contents/MacOS/SN VPN" --helper-check
+```
+
+这些检查不代表新设备安装、重启后的启动链路、所有网关、路由、DNS 或业务服务已验收。菜单金锁的探测范围见上文。
 
 ## 第三方组件与分发
 
-连接引擎来自 [OpenConnect](https://www.infradead.org/openconnect/)。本机已有运行环境验证版本为 v9.21；新安装使用本机 Homebrew 提供的版本，准备脚本会校验其支持 Fortinet 协议。仓库只保存本项目源码和 `vpnc-script` 源码，不分发本机复制的 OpenConnect、动态库或钥匙串二进制。
+连接引擎来自 [OpenConnect](https://www.infradead.org/openconnect/)。新安装使用本机 Homebrew 提供的版本，准备脚本会校验其支持 Fortinet 协议。仓库只保存本项目源码和 `vpnc-script` 源码，不分发本机复制的 OpenConnect、动态库或钥匙串二进制。
 
 第三方组件及许可证说明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。项目自身尚未指定整体开源许可证；第三方组件继续适用各自许可证。
 

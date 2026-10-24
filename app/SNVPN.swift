@@ -525,8 +525,15 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextFieldD
         connectMenuItem = menu.addItem(withTitle: "连接当前配置", action: #selector(connectMenuAction), keyEquivalent: ""); connectMenuItem?.target = self
         disconnectMenuItem = menu.addItem(withTitle: "断开当前连接", action: #selector(disconnect), keyEquivalent: ""); disconnectMenuItem?.target = self
         menu.addItem(NSMenuItem.separator())
+        menu.addItem(Self.versionMenuItem())
+        menu.addItem(NSMenuItem.separator())
         menu.addItem(withTitle: "退出（不会主动断开）", action: #selector(quit), keyEquivalent: "q").target = self
         statusItem.menu = menu; updateStatusAccessibility()
+    }
+    static func versionMenuItem() -> NSMenuItem {
+        let item = NSMenuItem(title: "版本：\(BuildVersion.display)", action: nil, keyEquivalent: "")
+        item.isEnabled = false
+        return item
     }
     static func editMenu() -> NSMenu {
         let menu = NSMenu(title: "编辑")
@@ -759,6 +766,10 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextFieldD
         return StatusReply(state: .stopped, reachable: false, autostart: false, message: "当前未连接", profileID: nil)
     }
     static func selfTest() {
+        let versionParts = BuildVersion.display.split(separator: "-")
+        precondition((versionParts.count == 2 || (versionParts.count == 3 && versionParts[2] == "dirty")) && versionParts[1].count == 8)
+        let versionItem = versionMenuItem()
+        precondition(versionItem.title == "版本：\(BuildVersion.display)" && !versionItem.isEnabled)
         let a = Profile(id: "primary", name: "旧连接", server: "old.example.test", port: 443, username: "old-user")
         let b = Profile(id: "11111111-1111-4111-8111-111111111111", name: "办公", server: "vpn.example.test", port: 443, username: "demo")
         let base = ProfileStore(selectedId: a.id, profiles: [a])
