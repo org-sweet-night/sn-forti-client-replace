@@ -4,6 +4,7 @@ import subprocess
 import tempfile
 import types
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('reauthorize_update', ROOT / 'scripts/reauthorize-update.py')
@@ -83,6 +84,69 @@ class ReauthorizationTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, r'OSStatus -25308') as error:
                 reauth.apply_with_reauthorization(update, 501, runner)
             self.assertNotIn('must-not-leak', str(error.exception))
+
+
+class RestoreConnectionTests(unittest.TestCase):
+    def run_main(self, failure=None, transaction=False, stop_failure=False, existing=False):
+        events = []
+        def control(operation):
+            events.append(operation)
+            if stop_failure and operation == 'stop':
+                raise RuntimeError('stop failed')
+        def apply(module, uid):
+            self.assertEqual(uid, 501)
+            events.append('apply-and-check')
+            if failure:
+                transaction_path.return_value.exists.return_value = transaction
+                raise RuntimeError(failure)
+        with mock.patch.object(reauth.os, 'geteuid', return_value=0), \
+             mock.patch.object(reauth, 'control_action', side_effect=control), \
+             mock.patch.object(reauth, 'apply_with_reauthorization', side_effect=apply), \
+             mock.patch.object(reauth.update, 'transaction_path') as transaction_path, \
+             mock.patch('sys.stdout'):
+            transaction_path.return_value.exists.return_value = existing
+            transaction_path.return_value.is_symlink.return_value = False
+            if failure or stop_failure or existing:
+                with self.assertRaises(RuntimeError):
+                    reauth.main(['--apply', '501', '--restore-connection'])
+            else:
+                reauth.main(['--apply', '501', '--restore-connection'])
+        return events
+
+    def test_success_starts_only_after_apply_and_check(self):
+        self.assertEqual(self.run_main(), ['stop', 'apply-and-check', 'start'])
+
+    def test_failure_without_transaction_restores_previous_connection(self):
+        self.assertEqual(self.run_main(failure='update failed'),
+                         ['stop', 'apply-and-check', 'start'])
+
+    def test_failure_with_transaction_does_not_start_incomplete_install(self):
+        self.assertEqual(self.run_main(failure='recovery required', transaction=True),
+                         ['stop', 'apply-and-check'])
+
+    def test_existing_transaction_does_not_stop_connection(self):
+        self.assertEqual(self.run_main(existing=True), [])
+
+    def test_nonobject_control_response_is_generic_failure(self):
+        for payload in (b'null', b'[]', b'true', b'"value"'):
+            with self.subTest(payload=payload), \
+                 mock.patch.object(reauth.update.install, 'safe_installed'), \
+                 mock.patch.object(reauth.subprocess, 'run', return_value=
+                     subprocess.CompletedProcess([], 0, stdout=payload)):
+                with self.assertRaisesRegex(RuntimeError, '^VPN maintenance operation failed$'):
+                    reauth.control_action('start')
+
+    def test_failed_stop_does_not_apply_or_start(self):
+        self.assertEqual(self.run_main(stop_failure=True), ['stop'])
+
+    def test_control_failure_ignores_stderr(self):
+        with mock.patch.object(reauth.update.install, 'safe_installed'), \
+             mock.patch.object(reauth.subprocess, 'run', return_value=
+                 subprocess.CompletedProcess([], 0, stdout=b'{"ok": false}',
+                                             stderr=b'secret')) as runner:
+            with self.assertRaisesRegex(RuntimeError, '^VPN maintenance operation failed$'):
+                reauth.control_action('start')
+            self.assertEqual(runner.call_args.kwargs['stderr'], subprocess.DEVNULL)
 
 
 if __name__ == '__main__':

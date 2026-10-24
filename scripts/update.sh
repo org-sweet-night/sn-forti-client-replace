@@ -18,8 +18,13 @@ if [[ -f "$ROOT/RELEASE.json" && ( "$MODE" == --apply || "$MODE" == --check ) ]]
 fi
 
 REAUTHORIZE="${SNVPN_REAUTHORIZE_CREDENTIALS:-0}"
+RESTORE="${SNVPN_RESTORE_CONNECTION:-0}"
 if [[ "$REAUTHORIZE" != 0 && ( "$REAUTHORIZE" != 1 || "$MODE" != --apply ) ]]; then
   echo '凭据重新授权仅支持显式升级操作。' >&2
+  exit 1
+fi
+if [[ "$RESTORE" != 0 && ( "$RESTORE" != 1 || "$REAUTHORIZE" != 1 ) ]]; then
+  echo '恢复连接仅支持已明确授权的维护升级。' >&2
   exit 1
 fi
 
@@ -44,10 +49,11 @@ if [[ "$MODE" != --recover && "$MODE" != --cleanup ]]; then
   /usr/bin/ditto "$ROOT/dist/SN VPN.app" "$STAGE/dist/SN VPN.app"
   /usr/bin/ditto "$ROOT/dist/service" "$STAGE/dist/service"
 fi
-/usr/bin/osascript - "$STAGE" "$MODE" "$(id -u)" "$UPDATER" <<'APPLESCRIPT'
+/usr/bin/osascript - "$STAGE" "$MODE" "$(id -u)" "$UPDATER" "$RESTORE" <<'APPLESCRIPT'
 on run argv
   set updater to (item 1 of argv) & "/scripts/" & (item 4 of argv)
   set command to "SUDO_UID=" & quoted form of (item 3 of argv) & " /bin/launchctl asuser " & quoted form of (item 3 of argv) & " /usr/bin/python3 -IB " & quoted form of updater & " " & quoted form of (item 2 of argv) & " " & quoted form of (item 3 of argv)
+  if item 5 of argv is "1" then set command to command & " --restore-connection"
   do shell script command with administrator privileges
 end run
 APPLESCRIPT

@@ -101,7 +101,17 @@ class Checks(unittest.TestCase):
         self.assertEqual(runner.classify('SSL connection failure: The operation timed out'), 'network')
         self.assertEqual(runner.classify('Authentication failed: connection timed out'), 'authentication')
         self.assertEqual(runner.classify('Server certificate verify failed'), 'certificate')
-        self.assertIsNone(runner.classify('Server certificate verify failed: signer not found'))
+        for warning in ('signer not found', 'self-signed certificate in certificate chain',
+                        'self-signed certificate', 'unable to get local issuer certificate',
+                        'unable to verify the first certificate'):
+            self.assertIsNone(runner.classify('Server certificate verify failed: ' + warning))
+        self.assertEqual(runner.classify(
+            "None of the 1 fingerprint(s) specified via --servercert match server's certificate: deadbeef"),
+            'certificate')
+        self.assertEqual(runner.classify('Server certificate has expired at yesterday'), 'certificate')
+        self.assertIsNone(runner.classify('Client certificate expires soon at tomorrow'))
+        self.assertEqual(runner.classify('Server certificate verify failed: certificate does not match hostname'),
+                         'certificate')
         self.assertEqual(runner.classify("Server SSL certificate didn't match"), 'certificate')
         for summary in ('Failed to complete authentication', 'Failed to obtain WebVPN cookie',
                         'Failed to open HTTPS connection', 'Failed to open HTTPS connection to example.test'):
@@ -141,7 +151,12 @@ class Checks(unittest.TestCase):
                                  (b'Authentication failed\nConnection timed out\n', 0),
                                  (b'Unexpected error\n', 0), (b'', 0), (b'__signal__', 0),
                                  (b'Server certificate verify failed: signer not found\nConnected to HTTPS example\nConnected as example\n', 0),
+                                 (b'Server certificate verify failed: self-signed certificate in certificate chain\nConnected to HTTPS example\nConnected as example\n', 0),
+                                 (b'Server certificate verify failed: unable to get local issuer certificate\nConnected to HTTPS example\nConnected as example\n', 0),
                                  (b'Configured as example, with SSL connected\n', 0),
+                                 (b"None of the 1 fingerprint(s) specified via --servercert match server's certificate: deadbeef\n", 0),
+                                 (b'Server certificate has expired at yesterday\n', 0),
+                                 (b'Server certificate verify failed: certificate does not match hostname\n', 0),
                                  (b'Configured as example\n401 Unauthorized\nFailed to open HTTPS connection to example.test\n', 1),
                                  (b'Configured as example\nConnection timed out\n401 Unauthorized\n', 1),
                                  (b'Configured as example\n401 Unauthorized\nOTP challenge required\n', 0),

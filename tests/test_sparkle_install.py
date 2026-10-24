@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -19,7 +20,7 @@ spec.loader.exec_module(sparkle)
 
 
 class SparkleInstallTests(unittest.TestCase):
-    def run_install(self, results=(), transaction=()):
+    def run_install(self, results=(), transaction=(), active=True):
         calls = []
         queue = list(results)
         transactions = list(transaction)
@@ -36,7 +37,7 @@ class SparkleInstallTests(unittest.TestCase):
                 patch.object(sparkle, 'safe_root_path'), \
                 patch.object(sparkle, 'trusted_uid', return_value=501), \
                 patch.object(sparkle, 'validate_release', return_value=Path(temporary) / 'release'), \
-                patch.object(sparkle, 'status', return_value=True), \
+                patch.object(sparkle, 'status', return_value=active), \
                 patch.object(sparkle, 'run', side_effect=fake_run), \
                 patch.object(sparkle, 'transaction_exists', side_effect=lambda: transactions.pop(0) if transactions else False):
             result = sparkle.install(Path(temporary) / 'release.zip')
@@ -71,7 +72,7 @@ class SparkleInstallTests(unittest.TestCase):
 
     def test_unfinished_transaction_suppresses_restart(self):
         result, calls = self.run_install([subprocess.CompletedProcess([], 0),
-                                          subprocess.CompletedProcess([], 1)], [True])
+                                          subprocess.CompletedProcess([], 1)], [False, True])
         self.assertNotEqual(result, 0)
         self.assertFalse(any(call[-1] == 'start' for call in calls))
 
@@ -96,11 +97,37 @@ class SparkleInstallTests(unittest.TestCase):
         self.assertNotEqual(result, 0)
         self.assertEqual(sum(call[-1] == 'start' for call in calls), 1)
 
-    def test_status_error_fails_closed(self):
+    def test_status_missing_autostart_fails_closed(self):
         with patch.object(sparkle, 'run', return_value=subprocess.CompletedProcess(
                 [], 0, '{"state":"error","profile_id":"must-not-be-reported"}')):
             with self.assertRaises(RuntimeError):
                 sparkle.status(501, Path('/managed/control.py'))
+
+    def test_existing_transaction_never_stops_or_updates(self):
+        result, calls = self.run_install(transaction=[True])
+        self.assertNotEqual(result, 0)
+        self.assertEqual(calls, [])
+
+    def test_stopped_update_does_not_start_connection(self):
+        result, calls = self.run_install(active=False)
+        self.assertEqual(result, 0)
+        self.assertFalse(any(call[-1] in ('stop', 'start') for call in calls))
+
+    def test_status_accepts_error_with_autostart_for_recovery(self):
+        for state, autostart, expected in [('error', True, True), ('error', False, False),
+                ('stopped', False, False), ('stopped', True, True), ('connected', False, True)]:
+            with self.subTest(state=state, autostart=autostart), patch.object(sparkle, 'run',
+                    return_value=subprocess.CompletedProcess([], 0,
+                        json.dumps({'state': state, 'autostart': autostart}))):
+                self.assertIs(sparkle.status(501, Path('/managed/control.py')), expected)
+
+    def test_status_rejects_malformed_response(self):
+        for payload in ('[]', 'null', '{"state":"unknown","autostart":true}',
+                        '{"state":"error","autostart":"true"}'):
+            with self.subTest(payload=payload), patch.object(sparkle, 'run',
+                    return_value=subprocess.CompletedProcess([], 0, payload)):
+                with self.assertRaises(RuntimeError):
+                    sparkle.status(501, Path('/managed/control.py'))
 
     def test_zip_validator_accepts_internal_framework_link(self):
         with tempfile.TemporaryDirectory() as directory:

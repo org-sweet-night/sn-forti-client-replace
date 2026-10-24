@@ -2,6 +2,7 @@
 """Run a managed update with narrowly authorized legacy credential ACL repair."""
 import contextlib
 import io
+import json
 import os
 from pathlib import Path
 import re
@@ -90,13 +91,43 @@ def apply_with_reauthorization(update_module, uid, runner=subprocess.run):
             raise RuntimeError('managed update verification failed')
 
 
+def control_action(operation):
+    control = update.install.TARGET / 'control.py'
+    update.install.safe_installed(control)
+    result = subprocess.run(['/usr/bin/python3', '-I', str(control), operation],
+                            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                            stderr=subprocess.DEVNULL, timeout=60)
+    try:
+        value = json.loads(result.stdout)
+    except (ValueError, TypeError):
+        raise RuntimeError('VPN maintenance operation failed')
+    if result.returncode or not isinstance(value, dict) or value.get('ok') is not True:
+        raise RuntimeError('VPN maintenance operation failed')
+
+
 def main(argv):
     if os.geteuid() != 0:
         raise RuntimeError('root required')
-    if (len(argv) != 2 or argv[0] != '--apply' or not argv[1].isdecimal()
+    restore = len(argv) == 3 and argv[2] == '--restore-connection'
+    if (len(argv) not in (2, 3) or (len(argv) == 3 and not restore) or argv[0] != '--apply' or not argv[1].isdecimal()
             or not 0 < int(argv[1]) < 2**32 - 1):
         raise RuntimeError('usage: reauthorize-update.py --apply UID')
-    apply_with_reauthorization(update, int(argv[1]))
+    if restore:
+        transaction = update.transaction_path()
+        if transaction.exists() or transaction.is_symlink():
+            raise RuntimeError('unfinished update transaction; run --recover UID')
+        control_action('stop')
+    try:
+        apply_with_reauthorization(update, int(argv[1]))
+    except Exception:
+        if restore and not update.transaction_path().exists():
+            try:
+                control_action('start')
+            except Exception:
+                pass
+        raise
+    if restore:
+        control_action('start')
     print('managed update verified; saved credential access retained')
 
 

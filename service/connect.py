@@ -110,15 +110,21 @@ def classify(line):
     line = line.lower()
     if line.startswith('script ') and ' returned error ' in line:
         return 'configuration'
-    # Explicit SPKI pin verification may succeed despite this CA-chain warning.
-    if 'server certificate verify failed: signer not found' in line:
+    # OpenConnect's pin callback may accept a leaf despite these CA-chain warnings.
+    if re.fullmatch(
+            r'server certificate verify failed: (?:signer not found|self-signed certificate '
+            r'in certificate chain|self-signed certificate|unable to get local issuer certificate|'
+            r'unable to verify the first certificate)', line.strip()):
         return None
+    if "fingerprint(s) specified via --servercert match server's certificate:" in line:
+        return 'certificate'
     if (line.strip() in ('failed to complete authentication', 'failed to obtain webvpn cookie',
                         'failed to open https connection') or
             line.startswith('failed to open https connection to ')):
         return None
     if any(s in line for s in ('certificate verification failed', 'server certificate verify failed',
-                               'certificate does not match', 'certificate expired', 'servercert mismatch',
+                               'certificate does not match', 'certificate expired',
+                               'certificate has expired', 'servercert mismatch',
                                "server ssl certificate didn't match")):
         return 'certificate'
     if any(s in line for s in ('authentication failed', 'login failed', 'incorrect password',

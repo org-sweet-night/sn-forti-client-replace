@@ -68,9 +68,11 @@ def status(uid, control):
     except (ValueError, TypeError):
         raise RuntimeError('could not read VPN state')
     if not isinstance(data, dict) or data.get('state') not in (
-            'connected', 'degraded', 'connecting', 'reconnecting', 'stopped'):
+            'connected', 'degraded', 'connecting', 'reconnecting', 'stopped', 'error'):
         raise RuntimeError('could not read VPN state')
-    return data['state'] in ('connected', 'degraded', 'connecting', 'reconnecting')
+    if not isinstance(data.get('autostart'), bool):
+        raise RuntimeError('could not read VPN state')
+    return data['state'] in ('connected', 'degraded', 'connecting', 'reconnecting') or data['autostart'] is True
 
 
 def control_action(uid, control, action):
@@ -117,6 +119,8 @@ def install(archive):
         with tempfile.TemporaryDirectory(prefix='snvpn-sparkle-', dir=TMPDIR) as temporary:
             release = validate_release(archive, Path(temporary) / 'release')
             updater = release / 'scripts/update.py'
+            if transaction_exists():
+                raise RuntimeError('unfinished update transaction')
             was_active = status(uid, control)
             if was_active:
                 if not control_action(uid, control, 'stop'):
