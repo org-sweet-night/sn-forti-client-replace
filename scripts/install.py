@@ -138,7 +138,7 @@ def code_signature(path, identifier):
     if (values.get('Identifier') != identifier or not re.fullmatch(r'[0-9a-fA-F]{40}', digest)
             or not re.search(r'flags=.*\bruntime\b', details)):
         raise RuntimeError('invalid code signature')
-    entitlements = subprocess.run(['/usr/bin/codesign', '-d', '--entitlements', '-', str(path)],
+    entitlements = subprocess.run(['/usr/bin/codesign', '-d', '--entitlements', '-', '--xml', str(path)],
                                   check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     encoded = (entitlements.stdout + entitlements.stderr).strip()
     if encoded:

@@ -76,7 +76,7 @@ def check_binaries(root):
     install.code_signature(app / install.APP_HELPER, install.HELPER_LABEL)
     if updater.exists():
         run('/usr/bin/codesign', '--verify', '--deep', '--strict', str(updater))
-        entitlements = run('/usr/bin/codesign', '-d', '--entitlements', '-', str(updater))
+        entitlements = run('/usr/bin/codesign', '-d', '--entitlements', '-', '--xml', str(updater))
         document = re.search(r'<plist(?:\s[^>]*)?>.*?</plist>', entitlements, re.S)
         if not document or plistlib.loads(document.group().encode()) != {'com.apple.security.cs.disable-library-validation': True}:
             raise RuntimeError('unexpected updater entitlements')
