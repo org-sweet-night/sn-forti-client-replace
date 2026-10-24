@@ -1,0 +1,16 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+/.venv/
+/app/dist/
+/app/reference/
+/runtime/
+/vpn-keychain
+/vpn-profile-keychain
+/vpn-sleep-setting
+/lock-validation.json
+/settings.json
+/profiles.json
+/profile.json
+*.log
+/.runtime-*/
