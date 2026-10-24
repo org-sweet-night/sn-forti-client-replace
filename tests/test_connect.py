@@ -11,7 +11,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-spec = importlib.util.spec_from_file_location('vpn_runner', Path(__file__).with_name('connect.py'))
+spec = importlib.util.spec_from_file_location('vpn_runner', Path(__file__).resolve().parents[1] / 'service' / 'connect.py')
 runner = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(runner)
 

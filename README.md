@@ -6,7 +6,25 @@ FortiReplace 使用自带的 OpenConnect 连接 Fortinet / FortiGate SSL VPN，�
 
 本项目替代的是 **FortiClient 的基础 SSL VPN 连接功能**。FortiClient 的 IPsec、企业身份集成、EMS、ZTNA 和终端防护不在当前实现范围内。本项目为独立的非官方客户端。
 
-应用名称为 **SN VPN**，构建产物为 `app/dist/SN VPN.app`。FortiReplace 是项目名。
+应用名称为 **SN VPN**，构建产物为 `dist/SN VPN.app`。FortiReplace 是项目名。
+
+## 目录结构
+
+```text
+app/           macOS App、XPC 助手、应用构建脚本与版本计数
+service/       VPN 后台 Python 源码与 vpnc-script
+helpers/       钥匙串和睡眠设置工具的 Swift 源码
+scripts/       安装器、安装入口和运行依赖准备脚本
+tests/         离线测试
+docs/          第三方组件说明
+LICENSES/      第三方许可证原文
+dist/          本地生成产物（忽略，不提交）
+  SN VPN.app   当前构建的应用
+  service/     安装所需的运行引擎、动态库和辅助工具
+tmp/           临时检查文件（按需创建，忽略）
+```
+
+根目录只保留项目说明和仓库配置。下方命令均从仓库根目录执行；系统已安装的应用和服务路径不随源码目录调整而改变。
 
 ## 已实现的功能
 
@@ -87,7 +105,7 @@ brew install openconnect
 ```bash
 git clone https://github.com/org-sweet-night/sn-forti-client-replace.git
 cd sn-forti-client-replace
-bash install.sh
+bash scripts/install.sh
 ```
 
 安装脚本从本机 Homebrew 准备 OpenConnect 与动态库、从源码编译钥匙串工具和 App，然后请求管理员授权，安装到 `/Applications/SN VPN.app` 和 `/Library/Application Support/Local VPN`，并配置受限助手。
@@ -106,22 +124,22 @@ bash install.sh
 bash app/build.sh
 ```
 
-全新安装前，或需要重新准备本地 OpenConnect、动态库和钥匙串工具时，再执行 `bash prepare-runtime.sh`。该命令只准备仓库内的运行依赖，不会更新系统已安装的运行环境。
+全新安装前，或需要重新准备本地 OpenConnect、动态库和钥匙串工具时，再执行 `bash scripts/prepare-runtime.sh`。该命令只准备仓库内的运行依赖，不会更新系统已安装的运行环境。
 
-产物为 `app/dist/SN VPN.app`，其中包含签名后的受限助手。构建会执行 App 与助手自检，并校验代码签名。生成的二进制、运行时和本机恢复资料不会提交到仓库。
+产物为 `dist/SN VPN.app`，其中包含签名后的受限助手。构建会执行 App 与助手自检，并校验代码签名。生成的二进制、运行时和本机恢复资料不会提交到仓库。
 
 ### 已有安装的维护
 
-`install.sh` 仅用于全新安装。已有安装须先退出 App，按改动范围维护：
+`scripts/install.sh` 仅用于全新安装。已有安装须先退出 App，按改动范围维护：
 
-- 仅更新 App：用 `app/dist/SN VPN.app` 替换系统 App，并重新安装助手。助手授权绑定 App 签名，即使助手源码未变，也需要同步安装。
-- 更新控制逻辑或迁移旧启动项：先执行 `sudo /usr/bin/python3 -I install.py --upgrade`。该入口只更新 `control.py`、迁移旧服务定义，不更新 `connect.py`、`setup.py`、OpenConnect 或其他运行依赖。
+- 仅更新 App：用 `dist/SN VPN.app` 替换系统 App，并重新安装助手。助手授权绑定 App 签名，即使助手源码未变，也需要同步安装。
+- 更新控制逻辑或迁移旧启动项：先执行 `sudo /usr/bin/python3 -I scripts/install.py --upgrade`。该入口只更新 `service/control.py`、迁移旧服务定义，不更新 `service/connect.py`、`service/setup.py`、OpenConnect 或其他运行依赖。
 - 更换运行引擎或其他运行代码：当前没有完整的一键升级入口，不能把 `--upgrade` 视为整个运行环境升级。
 
 系统 App 替换后，安装并检查助手：
 
 ```bash
-sudo /usr/bin/python3 -I install.py --install-helper "/Applications/SN VPN.app" "$(id -u)"
+sudo /usr/bin/python3 -I scripts/install.py --install-helper "/Applications/SN VPN.app" "$(id -u)"
 "/Applications/SN VPN.app/Contents/MacOS/SN VPN" --helper-check
 ```
 
@@ -142,9 +160,9 @@ App 与助手相互校验指定版本的代码签名，助手还校验调用账�
 - build 84 显示 `1.0.84`，build 100 显示 `1.1.0`，build 184 显示 `1.1.84`，build 200 显示 `1.2.0`。
 - 哈希为构建源码的 Git 提交前 8 位。发布构建应从已提交的源码开始，构建后单独提交构建号文件，因此版本中的源码哈希可以不同于最新的构建记录或文档提交。构建产物不入库。版本脚本检查的 App 源文件存在未提交改动时追加 `-dirty` 标记；仅文档或构建号改变不追加。
 - 构建号不以 Git 提交数量计算。只修改文档且不重新构建时，不增加构建号。
-- 同一工作区不允许并发构建；构建锁位于 `app/dist/.build-lock`。异常终止遗留锁时，先确认没有构建进程，再移除该锁目录。
+- 同一工作区不允许并发构建；构建锁位于 `dist/.build-lock`。异常终止遗留锁时，先确认没有构建进程，再移除该锁目录。
 
-### 最近交付记录（2026-10-24）
+### 已安装版本记录（2026-10-24）
 
 | 项目 | 已核验记录 |
 | --- | --- |
@@ -161,7 +179,7 @@ App 与助手相互校验指定版本的代码签名，助手还校验调用账�
 离线检查使用模拟服务和凭据，不会实际连接或断开 VPN：
 
 ```bash
-/usr/bin/python3 -m unittest discover
+/usr/bin/python3 -m unittest discover -s tests
 ```
 
 无需生成新构建号即可检查版本计算：
@@ -178,6 +196,6 @@ App 与助手相互校验指定版本的代码签名，助手还校验调用账�
 
 连接引擎来自 [OpenConnect](https://www.infradead.org/openconnect/)。新安装使用本机 Homebrew 提供的版本，准备脚本会校验其支持 Fortinet 协议。仓库只保存本项目源码和 `vpnc-script` 源码，不分发本机复制的 OpenConnect、动态库或钥匙串二进制。
 
-第三方组件及许可证说明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。项目自身尚未指定整体开源许可证；第三方组件继续适用各自许可证。
+第三方组件及许可证说明见 [THIRD_PARTY_NOTICES.md](docs/THIRD_PARTY_NOTICES.md)。项目自身尚未指定整体开源许可证；第三方组件继续适用各自许可证。
 
-`app/dist/`、本地运行依赖、缓存、参考资料、运行日志及本地连接配置均已忽略；过时截图、日志和维护恢复资料不作为源码保留。文档和示例使用占位地址，个人账号、真实网关、证书和业务数据应由每位使用者自行配置。
+`dist/`、本地运行依赖、缓存、参考资料、运行日志及本地连接配置均已忽略；过时截图、日志和维护恢复资料不作为源码保留。文档和示例使用占位地址，个人账号、真实网关、证书和业务数据应由每位使用者自行配置。

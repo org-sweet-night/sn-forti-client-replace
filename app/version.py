@@ -41,7 +41,7 @@ def main():
     if dirty:
         git_hash += "-dirty"
     counter = here / "build-number"
-    lock_path = here / "dist" / ".version.lock"
+    lock_path = here.parent / "dist" / ".version.lock"
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     with lock_path.open("a+") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)

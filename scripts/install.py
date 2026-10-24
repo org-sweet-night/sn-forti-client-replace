@@ -11,7 +11,9 @@ import subprocess
 import sys
 import tempfile
 
-SOURCE = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent
+SOURCE = ROOT / 'service'
+ARTIFACTS = ROOT / 'dist' / 'service'
 TARGET = Path('/Library/Application Support/Local VPN')
 LABEL = 'local.vpn.autoconnect'
 DAEMON = TARGET / (LABEL + '.plist')
@@ -286,13 +288,13 @@ def initialize():
     owners = {0, int(invoking_uid)} if invoking_uid.isdecimal() else {0, os.getuid()}
     sources = {}
     for name in files:
-        source = SOURCE / name
+        source = (ARTIFACTS if name in ('vpn-keychain', 'vpn-profile-keychain') else SOURCE) / name
         info = source.lstat()
         if (not stat.S_ISREG(info.st_mode) or info.st_uid not in owners
                 or info.st_mode & 0o022):
             raise RuntimeError('unexpected installation source')
         sources[name] = source
-    runtime = SOURCE / 'runtime'
+    runtime = ARTIFACTS / 'runtime'
     runtime_info = runtime.lstat()
     if not stat.S_ISDIR(runtime_info.st_mode) or runtime_info.st_uid not in owners or runtime_info.st_mode & 0o022:
         raise RuntimeError('unexpected installation source')

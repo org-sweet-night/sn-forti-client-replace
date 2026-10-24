@@ -3,16 +3,16 @@ set -euo pipefail
 umask 022
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
-APP="$HERE/dist/SN VPN.app"
+APP="$ROOT/dist/SN VPN.app"
 CONTENTS="$APP/Contents"
-mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources" "$CONTENTS/Library/HelperTools" "$HERE/dist"
-BUILD_LOCK="$HERE/dist/.build-lock"
+mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources" "$CONTENTS/Library/HelperTools" "$ROOT/dist"
+BUILD_LOCK="$ROOT/dist/.build-lock"
 if ! mkdir "$BUILD_LOCK" 2>/dev/null; then
-  echo "Another build is already using $HERE/dist" >&2
+  echo "Another build is already using $ROOT/dist" >&2
   exit 1
 fi
 trap 'rmdir "$BUILD_LOCK"' EXIT
-VERSION_SWIFT="$HERE/dist/BuildVersion.swift"
+VERSION_SWIFT="$ROOT/dist/BuildVersion.swift"
 /usr/bin/python3 "$HERE/version.py" --self-test
 /usr/bin/python3 "$HERE/version.py" "$VERSION_SWIFT"
 HELPER="$CONTENTS/Library/HelperTools/local.snvpn.helper"
@@ -44,16 +44,16 @@ cat > "$CONTENTS/Info.plist" <<PLIST
 <key>CFBundleIconFile</key><string>AppIcon</string>
 </dict></plist>
 PLIST
-ICONSET="$HERE/dist/AppIcon.iconset"
+ICONSET="$ROOT/dist/AppIcon.iconset"
 mkdir -p "$ICONSET"
-"$CONTENTS/MacOS/SN VPN" --make-icon "$HERE/dist/icon.png"
+"$CONTENTS/MacOS/SN VPN" --make-icon "$ROOT/dist/icon.png"
 for size in 16 32 128 256 512; do
-  /usr/bin/sips -z "$size" "$size" "$HERE/dist/icon.png" --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
+  /usr/bin/sips -z "$size" "$size" "$ROOT/dist/icon.png" --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
   double=$((size * 2))
-  /usr/bin/sips -z "$double" "$double" "$HERE/dist/icon.png" --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
+  /usr/bin/sips -z "$double" "$double" "$ROOT/dist/icon.png" --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
 done
 /usr/bin/iconutil -c icns "$ICONSET" -o "$CONTENTS/Resources/AppIcon.icns"
-rm -rf "$ICONSET" "$HERE/dist/icon.png"
+rm -rf "$ICONSET" "$ROOT/dist/icon.png"
 "$CONTENTS/MacOS/SN VPN" --self-test
 /usr/bin/codesign --force --options runtime --identifier local.snvpn.desktop --sign - "$APP"
 /usr/bin/codesign --verify --deep --strict "$APP"

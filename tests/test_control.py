@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
-BASE = Path(__file__).resolve().parent
+BASE = Path(__file__).resolve().parents[1] / 'service'
 spec = importlib.util.spec_from_file_location('vpn_control', BASE / 'control.py')
 control = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(control)

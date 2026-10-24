@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 umask 022
-ROOT="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 [[ "$(uname -s)" == Darwin ]] || { echo "macOS is required." >&2; exit 1; }
 command -v brew >/dev/null || { echo "Install Homebrew, then run: brew install openconnect" >&2; exit 1; }
 command -v swiftc >/dev/null || { echo "Install Xcode Command Line Tools: xcode-select --install" >&2; exit 1; }
@@ -10,13 +10,14 @@ PREFIX="$(brew --prefix openconnect)"
 "$PREFIX/bin/openconnect" --version | /usr/bin/grep -Eq '^Supported protocols:.*fortinet' || {
   echo "The installed OpenConnect must support the fortinet protocol." >&2; exit 1;
 }
-STAGE="$(mktemp -d "$ROOT/.runtime-prepare.XXXXXX")"
+mkdir -p "$ROOT/dist"
+STAGE="$(mktemp -d "$ROOT/dist/.runtime-prepare.XXXXXX")"
 trap 'rm -rf "$STAGE"' EXIT
-mkdir "$STAGE/runtime"
-swiftc -Onone -framework Foundation -framework Security "$ROOT/vpn-keychain.swift" -o "$STAGE/vpn-keychain"
-cp "$STAGE/vpn-keychain" "$STAGE/vpn-profile-keychain"
-swiftc -Onone -framework Foundation -framework SystemConfiguration "$ROOT/vpn-sleep-setting.swift" -o "$STAGE/vpn-sleep-setting"
-/usr/bin/python3 - "$PREFIX/bin/openconnect" "$STAGE/runtime" <<'PY'
+mkdir "$STAGE/service" "$STAGE/service/runtime"
+swiftc -Onone -framework Foundation -framework Security "$ROOT/helpers/vpn-keychain.swift" -o "$STAGE/service/vpn-keychain"
+cp "$STAGE/service/vpn-keychain" "$STAGE/service/vpn-profile-keychain"
+swiftc -Onone -framework Foundation -framework SystemConfiguration "$ROOT/helpers/vpn-sleep-setting.swift" -o "$STAGE/service/vpn-sleep-setting"
+/usr/bin/python3 - "$PREFIX/bin/openconnect" "$STAGE/service/runtime" <<'PY'
 import os
 from pathlib import Path
 import re
@@ -86,15 +87,12 @@ for target in copied.values():
 print('Prepared OpenConnect and %d libraries.' % (len(copied) - 1))
 PY
 for helper in vpn-keychain vpn-profile-keychain vpn-sleep-setting; do
-  /usr/bin/codesign --force --sign - "$STAGE/$helper"
+  /usr/bin/codesign --force --sign - "$STAGE/service/$helper"
 done
 # Keep the previous runtime until preparation and signing have completed.
-if [[ -e "$ROOT/runtime" ]]; then mv "$ROOT/runtime" "$STAGE/previous-runtime"; fi
-if ! mv "$STAGE/runtime" "$ROOT/runtime"; then
-  [[ ! -e "$STAGE/previous-runtime" ]] || mv "$STAGE/previous-runtime" "$ROOT/runtime"
+if [[ -e "$ROOT/dist/service" ]]; then mv "$ROOT/dist/service" "$STAGE/previous-service"; fi
+if ! mv "$STAGE/service" "$ROOT/dist/service"; then
+  [[ ! -e "$STAGE/previous-service" ]] || mv "$STAGE/previous-service" "$ROOT/dist/service"
   exit 1
 fi
-for helper in vpn-keychain vpn-profile-keychain vpn-sleep-setting; do
-  mv -f "$STAGE/$helper" "$ROOT/$helper"
-done
-echo "Prepared local runtime and Swift helpers."
+echo "Prepared local runtime and Swift helpers in dist/service."

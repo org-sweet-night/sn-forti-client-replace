@@ -1,22 +1,21 @@
+# Generated artifacts and scratch files
+/dist/
+/tmp/
+/app/.build-number-*
+*.app/
+*.dSYM/
+
+# Local environment and caches
 .DS_Store
 __pycache__/
 *.py[cod]
 /.venv/
-/app/dist/
-/app/reference/
-/app/.build-number-*
-/runtime/
-/vpn-keychain
-/vpn-profile-keychain
-/vpn-sleep-setting
-/lock-validation.json
+*.log
+
+# Local connection settings must never be committed
 /settings.json
 /profiles.json
 /profile.json
-*.log
-/.runtime-*/
-
-# Local scratch files and obsolete build copies
-/tmp/
-*.app/
-*.dSYM/
+/service/settings.json
+/service/profiles.json
+/service/profile.json

@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
-spec = importlib.util.spec_from_file_location('profile_control', Path(__file__).with_name('control.py'))
+spec = importlib.util.spec_from_file_location('profile_control', Path(__file__).resolve().parents[1] / 'service' / 'control.py')
 c = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(c)
 s = c.setup

@@ -8,6 +8,7 @@ import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 import install
 
 
@@ -20,33 +21,38 @@ class InitializeTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
         root = Path(self.temp.name)
         self.source = root / 'source'; self.source.mkdir()
+        self.artifacts = root / 'artifacts'; (self.artifacts / 'runtime').mkdir(parents=True)
         self.target = root / 'installed'
         self.daemon = self.target / (install.LABEL + '.plist')
-        for name in ('connect.py', 'setup.py', 'control.py', 'vpn-keychain', 'vpn-profile-keychain', 'vpnc-script'):
+        for name in ('connect.py', 'setup.py', 'control.py', 'vpnc-script'):
             (self.source / name).write_text(name)
-        (self.source / 'runtime').mkdir()
-        (self.source / 'runtime/openconnect').write_text('runtime')
-        for key, value in dict(SOURCE=self.source, TARGET=self.target, DAEMON=self.daemon,
+        for name in ('vpn-keychain', 'vpn-profile-keychain', 'vpn-sleep-setting'):
+            (self.artifacts / name).write_text(name)
+        (self.artifacts / 'runtime/openconnect').write_text('runtime')
+        for key, value in dict(SOURCE=self.source, ARTIFACTS=self.artifacts, TARGET=self.target, DAEMON=self.daemon,
                                LEGACY_DAEMON=root / 'LaunchDaemons' / (install.LABEL + '.plist')).items():
             p = patch.object(install, key, value); p.start(); self.addCleanup(p.stop)
         p = patch.dict(os.environ, {'SUDO_UID': str(os.getuid())}); p.start(); self.addCleanup(p.stop)
 
     def test_initializes_idle_runtime_without_forticlient_or_vpn_actions(self):
         with patch.object(install.os, 'geteuid', return_value=0), patch.object(sys, 'argv',
-                ['install.py', '--initialize']), patch.object(install.subprocess, 'run') as run:
+                ['scripts/install.py', '--initialize']), patch.object(install.subprocess, 'run') as run:
             self.assertEqual(install.main(), 0)
-        run.assert_called_once_with([str(self.source / 'runtime/openconnect'), '--version'],
+        run.assert_called_once_with([str(self.artifacts / 'runtime/openconnect'), '--version'],
                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
         self.assertFalse((self.target / 'settings.json').exists())
         self.assertEqual((self.target / 'control.lock').stat().st_mode & 0o777, 0o600)
         self.assertEqual(plistlib.loads(self.daemon.read_bytes())['ProgramArguments'],
                          ['/usr/bin/python3', '-I', str(self.target / 'connect.py')])
         self.assertTrue((self.target / 'runtime/openconnect').is_file())
+        self.assertEqual((self.target / 'connect.py').read_text(), 'connect.py')
+        self.assertEqual((self.target / 'vpn-keychain').read_text(), 'vpn-keychain')
+        self.assertEqual((self.target / 'vpnc-script').read_text(), 'vpnc-script')
 
     def test_positional_import_bootstraps_only_after_setup_and_has_lock(self):
         events = []
         def run(args, **kwargs):
-            if args[0] == str(self.source / 'runtime/openconnect'):
+            if args[0] == str(self.artifacts / 'runtime/openconnect'):
                 events.append('version')
             elif args[0] == '/usr/bin/python3':
                 events.append('setup')
@@ -59,14 +65,14 @@ class InitializeTests(unittest.TestCase):
                 self.assertTrue((self.target / 'control.lock').is_file())
             return subprocess.CompletedProcess(args, 0)
         with patch.object(install.os, 'geteuid', return_value=0), patch.object(sys, 'argv',
-                ['install.py', 'imported-profile']), patch.object(install.subprocess, 'run', side_effect=run):
+                ['scripts/install.py', 'imported-profile']), patch.object(install.subprocess, 'run', side_effect=run):
             self.assertEqual(install.main(), 0)
         self.assertEqual(events, ['version', 'setup', 'bootstrap'])
 
     def test_positional_setup_failure_keeps_initialized_idle_runtime(self):
         events = []
         def run(args, **kwargs):
-            if args[0] == str(self.source / 'runtime/openconnect'):
+            if args[0] == str(self.artifacts / 'runtime/openconnect'):
                 events.append('version')
                 return subprocess.CompletedProcess(args, 0)
             if args[0] == '/usr/bin/python3':
@@ -77,7 +83,7 @@ class InitializeTests(unittest.TestCase):
             events.append('unexpected')
             return subprocess.CompletedProcess(args, 0)
         with patch.object(install.os, 'geteuid', return_value=0), patch.object(sys, 'argv',
-                ['install.py', 'imported-profile']), patch.object(install.subprocess, 'run', side_effect=run):
+                ['scripts/install.py', 'imported-profile']), patch.object(install.subprocess, 'run', side_effect=run):
             self.assertEqual(install.main(), 1)
         self.assertEqual(events, ['version', 'setup'])
         self.assertTrue((self.target / 'control.lock').is_file())
@@ -100,7 +106,19 @@ class InitializeTests(unittest.TestCase):
             with self.assertRaisesRegex(OSError, 'copy failed'): install.initialize()
         self.assertFalse(self.target.exists())
         self.assertEqual(list(self.target.parent.glob('.local-vpn-*')), [])
-        self.assertEqual((self.source / 'runtime/openconnect').read_text(), 'runtime')
+        self.assertEqual((self.artifacts / 'runtime/openconnect').read_text(), 'runtime')
+
+    def test_unsafe_generated_helper_is_refused(self):
+        helper = self.artifacts / 'vpn-keychain'
+        helper.chmod(0o666)
+        with self.assertRaisesRegex(RuntimeError, 'unexpected installation source'):
+            install.initialize()
+        self.assertFalse(self.target.exists())
+        helper.unlink()
+        helper.symlink_to(self.source / 'control.py')
+        with self.assertRaisesRegex(RuntimeError, 'unexpected installation source'):
+            install.initialize()
+        self.assertFalse(self.target.exists())
 
     def test_existing_installation_is_refused_and_preserved(self):
         self.target.mkdir(); sentinel = self.target / 'sentinel'; sentinel.write_text('keep')
