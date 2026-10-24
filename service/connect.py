@@ -11,6 +11,7 @@ import plistlib
 import re
 import shlex
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
@@ -19,6 +20,7 @@ from urllib.parse import urlunsplit
 BASE = Path(__file__).resolve().parent
 PLIST = Path('/Library/Application Support/Fortinet/FortiClient/conf/vpn.plist')
 ENV = {'PATH': '/usr/bin:/bin:/usr/sbin:/sbin', 'HOME': '/var/root', 'LANG': 'C'}
+HELPER_POLICY = BASE / 'helper-policy.plist'
 
 
 def load_profile(settings):
@@ -45,6 +47,35 @@ def credential_command(settings, action='read'):
     if account != 'profile-' + identity:
         raise ValueError('configuration')
     return [str(BASE / 'vpn-profile-keychain'), '--' + action, account]
+
+
+def credential_user_id():
+    """Read the installer-owned GUI bootstrap UID; fail closed if policy is unsafe."""
+    try:
+        info = HELPER_POLICY.lstat()
+        if (not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or
+                info.st_mode & 0o022):
+            raise ValueError('credential policy')
+        with HELPER_POLICY.open('rb') as stream:
+            policy = plistlib.load(stream)
+    except (OSError, plistlib.InvalidFileException, ValueError) as error:
+        raise ValueError('credential policy') from error
+    version = policy.get('version') if isinstance(policy, dict) else None
+    if isinstance(version, bool) or version != 1:
+        raise ValueError('credential policy')
+    uid = policy.get('userID')
+    if isinstance(uid, bool) or not isinstance(uid, int) or not 0 < uid < 2**32 - 1:
+        raise ValueError('credential policy')
+    requirement = policy.get('clientRequirement')
+    if (not isinstance(requirement, str) or not re.fullmatch(
+            r'identifier "local\.snvpn\.desktop" and cdhash H"[0-9A-Fa-f]{40}"',
+            requirement)):
+        raise ValueError('credential policy')
+    return uid
+
+
+def credential_run_command(settings):
+    return ['/bin/launchctl', 'asuser', str(credential_user_id())] + credential_command(settings)
 
 
 def command(profile, pin, base=BASE):
@@ -185,7 +216,7 @@ def run():
         profile = load_profile(settings)
         argv = command(profile, settings['servercert'])
         write_status('connecting')
-        credential = subprocess.run(credential_command(settings),
+        credential = subprocess.run(credential_run_command(settings),
                                     stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                                     env=ENV, timeout=30, check=True).stdout
         if not credential or len(credential) > 4096 or b'\n' in credential or b'\r' in credential or b'\0' in credential:

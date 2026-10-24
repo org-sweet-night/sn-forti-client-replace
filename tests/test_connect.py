@@ -6,6 +6,7 @@ import io
 import plistlib
 from pathlib import Path
 import subprocess
+import stat
 import sys
 import tempfile
 import unittest
@@ -17,6 +18,48 @@ spec.loader.exec_module(runner)
 
 
 class Checks(unittest.TestCase):
+    def test_credential_policy_requires_safe_root_owned_gui_uid(self):
+        with tempfile.TemporaryDirectory() as directory:
+            policy_path = Path(directory) / 'helper-policy.plist'
+            policy = {'version': 1, 'userID': 501,
+                      'clientRequirement': 'identifier "local.snvpn.desktop" and cdhash H"' + 'a' * 40 + '"'}
+            policy_path.write_bytes(plistlib.dumps(policy))
+            original_lstat = Path.lstat
+
+            def root_owned(path):
+                info = original_lstat(path)
+                if path == policy_path:
+                    return mock.Mock(st_mode=stat.S_IFREG | 0o644, st_uid=0)
+                return info
+
+            with mock.patch.object(runner, 'HELPER_POLICY', policy_path), \
+                 mock.patch.object(Path, 'lstat', root_owned):
+                self.assertEqual(runner.credential_user_id(), 501)
+                self.assertEqual(runner.credential_run_command({}), [
+                    '/bin/launchctl', 'asuser', '501', str(runner.BASE / 'vpn-keychain'), '--read'])
+
+                for invalid in (
+                        dict(policy, userID=True), dict(policy, userID=0),
+                        dict(policy, userID=2**32 - 1), dict(policy, version=2),
+                        dict(policy, version=True),
+                        dict(policy, clientRequirement='allow any')):
+                    policy_path.write_bytes(plistlib.dumps(invalid))
+                    with self.assertRaises(ValueError):
+                        runner.credential_user_id()
+
+                policy_path.write_bytes(plistlib.dumps(policy))
+                for attrs in ({'st_mode': stat.S_IFREG | 0o664, 'st_uid': 0},
+                              {'st_mode': stat.S_IFREG | 0o644, 'st_uid': 501},
+                              {'st_mode': stat.S_IFLNK | 0o777, 'st_uid': 0}):
+                    with mock.patch.object(Path, 'lstat', return_value=mock.Mock(**attrs)):
+                        with self.assertRaises(ValueError):
+                            runner.credential_user_id()
+
+                missing = policy_path.with_name('missing.plist')
+                with mock.patch.object(runner, 'HELPER_POLICY', missing):
+                    with self.assertRaises(ValueError):
+                        runner.credential_user_id()
+
     def test_standalone_profile(self):
         profile = {'VpnType': 0, 'Server': 'vpn.example.test', 'ServerPort': 443, 'User': 'person'}
         with tempfile.TemporaryDirectory() as directory:
@@ -128,6 +171,8 @@ class Checks(unittest.TestCase):
                          mock.patch.object(runner.signal, 'signal') as installed_signal, \
                          mock.patch.object(runner.os, 'read', wraps=runner.os.read) as read, \
                          mock.patch.object(runner, 'write_status') as status, \
+                         mock.patch.object(runner, 'credential_run_command',
+                                           return_value=['/bin/launchctl', 'asuser', '501', '/helper', '--read']) as credential_command, \
                          mock.patch.object(runner.subprocess, 'run', return_value=mock.Mock(stdout=b'secret')), \
                          mock.patch.object(runner.subprocess, 'Popen', side_effect=[child, awake]) as spawn:
                         if output == b'__signal__':
@@ -136,6 +181,7 @@ class Checks(unittest.TestCase):
                                 installed_signal.call_args_list[0].args[1](runner.signal.SIGTERM, None)
                             read.side_effect = interrupt_read
                         self.assertEqual(runner.run(), expected)
+                        credential_command.assert_called_once_with(mock.ANY)
                         if output == b'__signal__':
                             self.assertIn(mock.call('stopped'), status.call_args_list)
                             child.send_signal.assert_any_call(runner.signal.SIGINT)

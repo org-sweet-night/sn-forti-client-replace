@@ -17,6 +17,18 @@
 
 钥匙串不兼容仍会停止并回滚，不自动改写密码或放宽权限。该问题需要用户单独授权处理。管理员取消、网络错误、签名错误、安装失败均不能算作更新成功。
 
+后台 VPN 进程按受限助手策略中已授权的本机账号进入登录会话读取凭据；策略文件必须由 root 管理且字段有效。缺失或不安全的策略会停止连接，不回退到其他账号。这样后台进程和交互式 App 使用同一个钥匙串会话。
+
+对已明确获准的旧版凭据授权迁移，维护者可从源码构建受限工具，再使用完整发布目录执行维护升级：
+
+```bash
+swiftc -O -target arm64-apple-macosx15.0 -framework Foundation -framework Security helpers/vpn-keychain-authorization.swift -o dist/vpn-keychain-authorization
+codesign --force --options runtime --identifier local.snvpn.keychain-authorization --sign - dist/vpn-keychain-authorization
+SNVPN_RELEASE_ROOT=/path/to/verified-release SNVPN_REAUTHORIZE_CREDENTIALS=1 bash scripts/update.sh --apply
+```
+
+该显式维护模式在完整事务内按发布输入的 SHA-256 核对已安装工具，仅向目标 VPN 密码条目的解密访问列表追加当前工具，保留已有条目，不读写密码数据。随后仍须通过实际凭据读取、组件哈希、签名和助手检查。普通升级不启用此模式。迁移失败时文件会按原升级器回滚；已获用户同意添加的精确工具授权可能保留，不能将文件回滚表述为撤销了钥匙串授权。
+
 ## 公开更新源与信任
 
 固定 feed 为 `https://github.com/org-sweet-night/sn-forti-client-replace/releases/latest/download/appcast.xml`。当前仓库需要由所有者设为 public；私有仓库的匿名 404 不会被解释为“已是最新版”。客户端没有内置 GitHub 令牌。
