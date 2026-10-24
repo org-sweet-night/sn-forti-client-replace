@@ -21,6 +21,15 @@
 
 安装位置为 `/Applications/SN VPN.app` 和 `/Library/Application Support/Local VPN`。首次安装需要管理员权限，安装后日常连接通过受限助手操作。开机启动和自动连接默认关闭。
 
+若首次安装在“复制 App”或“安装受限助手”阶段中止，已初始化的文件会保留，Install 会拒绝再次覆盖。这时不要删除运行环境、改跑 Update 或反复安装。保留终端错误信息，由维护者先检查该次安装留下的文件；确认是本次安装且运行环境完整后，在解压目录补齐 App 复制和助手安装：
+
+```bash
+sudo /usr/bin/ditto 'dist/SN VPN.app' '/Applications/SN VPN.app'
+sudo /usr/bin/python3 -I scripts/install.py --install-helper '/Applications/SN VPN.app' "$(id -u)"
+```
+
+这些是检查后的维修步骤，不能用于覆盖他人的已有安装。完成后打开 App，并用 `bash scripts/update.sh --check` 检查托管文件、助手通信和凭据。此过程不需要删除或重建连接配置。
+
 ## 范围与验证
 
 支持 Fortinet SSL VPN 用户名密码认证；不支持 IPsec、MFA/OTP、SAML、EMS/ZTNA 或终端防护。
