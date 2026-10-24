@@ -77,7 +77,10 @@ def apply_with_reauthorization(update_module, uid, runner=subprocess.run):
         if verify_calls != 2:
             raise RuntimeError('unexpected credential validation phase')
         for command in commands:
-            run_authorization(update_module, command, runner)
+            try:
+                original_verify([command])
+            except RuntimeError:
+                run_authorization(update_module, command, runner)
 
     update_module.verify_credentials = verify
     try:

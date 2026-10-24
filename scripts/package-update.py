@@ -95,6 +95,7 @@ def postinstall_script():
         'case "${2:-}" in ""|/) ;; *) echo "SN VPN update requires the root install location" >&2; exit 1 ;; esac\n'
         'case "${3:-}" in /) ;; *) echo "SN VPN update requires the startup volume" >&2; exit 1 ;; esac\n'
         'SCRIPT_DIR=$(dirname "$0")\n'
+        'case "$SCRIPT_DIR" in /tmp) SCRIPT_DIR=/private/tmp ;; /tmp/*) SCRIPT_DIR="/private/tmp/${SCRIPT_DIR#/tmp/}" ;; esac\n'
         '/usr/bin/python3 -IB - "$SCRIPT_DIR" <<\'PY\'\n'
         'import os, stat, sys\nfrom pathlib import Path\n'
         'base = Path(os.path.abspath(sys.argv[1]))\nseen = set()\n'

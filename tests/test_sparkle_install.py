@@ -189,6 +189,38 @@ class SparkleInstallTests(unittest.TestCase):
                 patch.object(sys, 'argv', ['postinstall-preflight', directory]):
             exec(compile(body, '<postinstall-preflight>', 'exec'), {})
 
+    def test_generated_postinstall_canonicalizes_only_tmp_alias(self):
+        with tempfile.TemporaryDirectory(dir='/private/tmp') as directory:
+            base = Path(directory)
+            runner = base / 'python-stub'
+            record = base / 'calls.jsonl'
+            runner.write_text('#!' + sys.executable + '\n' +
+                'import json, sys\n' +
+                'with open(' + repr(str(record)) + ', "a") as output:\n' +
+                '    output.write(json.dumps(sys.argv[1:]) + "\\n")\n')
+            runner.chmod(0o700)
+            script = base / 'postinstall'
+            script.write_text(sparkle.package_update.postinstall_script().replace(
+                '/usr/bin/python3', str(runner)))
+            alias = '/tmp/' + base.name + '/postinstall'
+            result = subprocess.run(['/bin/sh', alias, 'package', '/', '/'],
+                                    capture_output=True, timeout=5)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            calls = [json.loads(line) for line in record.read_text().splitlines()]
+            self.assertEqual(calls[0], ['-IB', '-', str(base)])
+            self.assertEqual(calls[1], ['-IB', str(base / 'sparkle-install.py'),
+                                      '--payload', str(base / 'release.zip')])
+
+    def test_generated_postinstall_rejects_nested_resource_symlink(self):
+        body = sparkle.package_update.postinstall_script().split("<<'PY'\n", 1)[1].split('\nPY\n', 1)[0]
+        def fake_lstat(path):
+            mode = stat.S_IFLNK | 0o777 if path.name == 'release.zip' else stat.S_IFREG | 0o644
+            return os.stat_result((mode, 0, 0, 0, 0, 0, 0, 0, 0, 0))
+        with patch.object(Path, 'lstat', fake_lstat), \
+             patch.object(sys, 'argv', ['postinstall-preflight', '/private/tmp/package']):
+            with self.assertRaisesRegex(SystemExit, 'Unsafe package source'):
+                exec(compile(body, '<postinstall-preflight>', 'exec'), {})
+
     def test_update_never_invokes_credential_or_configuration_commands(self):
         result, calls = self.run_install()
         self.assertEqual(result, 0)

@@ -13,7 +13,7 @@ spec.loader.exec_module(reauth)
 
 
 class ReauthorizationTests(unittest.TestCase):
-    def fake_update(self, directory, fail_precheck=False):
+    def fake_update(self, directory, fail_precheck=False, fail_postcheck=False):
         base = Path(directory)
         artifact = base / 'artifacts/vpn-keychain'
         installed = base / 'target/vpn-keychain'
@@ -31,7 +31,7 @@ class ReauthorizationTests(unittest.TestCase):
 
         def verify(commands):
             update.verify_calls.append(commands)
-            if fail_precheck:
+            if fail_precheck or (fail_postcheck and len(update.verify_calls) > 1):
                 raise RuntimeError('saved VPN credential access failed')
 
         def apply(uid):
@@ -45,7 +45,7 @@ class ReauthorizationTests(unittest.TestCase):
 
     def test_authorizes_only_between_original_precheck_and_postcheck(self):
         with tempfile.TemporaryDirectory() as directory:
-            update, installed = self.fake_update(directory)
+            update, installed = self.fake_update(directory, fail_postcheck=True)
             calls = []
 
             def runner(args, **kwargs):
@@ -53,13 +53,42 @@ class ReauthorizationTests(unittest.TestCase):
                 return subprocess.CompletedProcess(args, 0, stderr=b'')
 
             reauth.apply_with_reauthorization(update, 501, runner)
-            self.assertEqual(len(update.verify_calls), 1)
+            self.assertEqual(len(update.verify_calls), 2)
             self.assertEqual(len(calls), 2)
             self.assertEqual(calls[0][0][1:4], ['--authorize', str(installed), 'primary'])
             self.assertEqual(calls[1][0], (str(installed), '--read'))
             self.assertTrue(all(call[1]['stdin'] == subprocess.DEVNULL and
                                 call[1]['stdout'] == subprocess.DEVNULL and
                                 call[1]['timeout'] == 180 for call in calls))
+
+    def test_readable_helper_never_runs_authorization_tool(self):
+        with tempfile.TemporaryDirectory() as directory:
+            update, _ = self.fake_update(directory)
+            runner = mock.Mock(side_effect=AssertionError('authorization must not run'))
+            reauth.apply_with_reauthorization(update, 501, runner)
+            runner.assert_not_called()
+            self.assertEqual(len(update.verify_calls), 2)
+
+    def test_authorizes_only_the_command_whose_postcheck_failed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            update, installed = self.fake_update(directory)
+            readable = (str(installed), '--read')
+            unreadable = (str(installed.parent / 'vpn-profile-keychain'), '--read',
+                          'profile-11111111-1111-1111-1111-111111111111')
+            checks = []
+            def verify(commands):
+                checks.append(commands)
+                if len(checks) > 1 and commands == [unreadable]:
+                    raise RuntimeError('saved VPN credential access failed')
+            update.verify_credentials = verify
+            def apply(uid):
+                update.verify_credentials([readable, unreadable])
+                update.verify_credentials([readable, unreadable])
+            update.apply = apply
+            with mock.patch.object(reauth, 'run_authorization') as authorize:
+                reauth.apply_with_reauthorization(update, 501)
+            authorize.assert_called_once_with(update, unreadable, subprocess.run)
+            self.assertEqual(checks, [[readable, unreadable], [readable], [unreadable]])
 
     def test_precheck_failure_never_authorizes(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -72,7 +101,7 @@ class ReauthorizationTests(unittest.TestCase):
 
     def test_read_failure_reports_only_status_not_stderr(self):
         with tempfile.TemporaryDirectory() as directory:
-            update, _ = self.fake_update(directory)
+            update, _ = self.fake_update(directory, fail_postcheck=True)
             calls = 0
 
             def runner(args, **kwargs):
