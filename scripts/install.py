@@ -28,6 +28,25 @@ APP_PATH = Path('/Applications/SN VPN.app')
 APP_HELPER = Path('Contents/Library/HelperTools/local.snvpn.helper')
 
 
+def safe_framework_link(path, tree_root):
+    """Allow only relative links confined to the bundled Sparkle framework."""
+    suffix = Path('Contents/Helpers/SN VPN Updater.app/Contents/Frameworks/Sparkle.framework').parts
+    try:
+        relative = path.relative_to(tree_root)
+        for index in range(len(relative.parts) - len(suffix)):
+            if relative.parts[index:index + len(suffix)] == suffix:
+                framework = tree_root.joinpath(*relative.parts[:index + len(suffix)])
+                target = Path(os.readlink(path))
+                if target.is_absolute() or framework.is_symlink():
+                    return False
+                resolved = path.resolve(strict=True)
+                resolved.relative_to(framework.resolve(strict=True))
+                return resolved.is_file() or resolved.is_dir()
+    except (OSError, ValueError, RuntimeError):
+        pass
+    return False
+
+
 def safe_installed(path):
     info = path.lstat()
     if stat.S_ISLNK(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
@@ -94,8 +113,10 @@ def check_app_path(path, owners):
             raise RuntimeError('unsafe application bundle')
         for root, directories, files in os.walk(path, followlinks=False):
             for name in directories + files:
-                info = (Path(root) / name).lstat()
-                if stat.S_ISLNK(info.st_mode) or info.st_uid not in owners or info.st_mode & 0o022:
+                child = Path(root) / name
+                info = child.lstat()
+                link = stat.S_ISLNK(info.st_mode)
+                if info.st_uid not in owners or (link and not safe_framework_link(child, path)) or (not link and info.st_mode & 0o022):
                     raise RuntimeError('unsafe application contents')
         return
     current = APP_PATH

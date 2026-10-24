@@ -40,6 +40,22 @@ class ReleaseTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'symlink'):
                 release.inventory(root)
 
+    def test_framework_links_are_manifested_and_cannot_escape(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            framework = root / 'dist/SN VPN.app/Contents/Helpers/SN VPN Updater.app/Contents/Frameworks/Sparkle.framework'
+            (framework / 'Versions/B').mkdir(parents=True)
+            (framework / 'Versions/B/Sparkle').write_bytes(b'framework')
+            link = framework / 'Versions/Current'
+            link.symlink_to('B')
+            (framework / 'Sparkle').symlink_to('Versions/Current/Sparkle')
+            files = release.inventory(root)
+            self.assertIn(link.relative_to(root).as_posix(), files)
+            link.unlink()
+            link.symlink_to(root)
+            with self.assertRaisesRegex(RuntimeError, 'unsafe symlink'):
+                release.inventory(root)
+
     def test_newer_binary_cannot_be_disguised_by_lower_plist_minimum(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

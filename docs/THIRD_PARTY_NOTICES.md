@@ -8,4 +8,6 @@ Generated OpenConnect binaries, dynamic libraries and compiled Swift helpers are
 
 ## Release ZIP
 
+Automatic update builds bundle [Sparkle 2.10.0](https://github.com/sparkle-project/Sparkle/releases/tag/2.10.0), downloaded from the upstream distribution with a pinned SHA-256. The upstream LICENSE, including bundled third-party notices, is included as `LICENSES/Sparkle.txt` in release ZIPs. Sparkle runs in a separate unprivileged updater app; the managed VPN application and privileged helper remain under this project's signature and authorization checks.
+
 Release ZIPs bundle OpenConnect 9.21 (LGPL-2.1) and OpenSSL 3.5.8 (Apache-2.0), built by `scripts/build-release-runtime.sh`. The exact upstream source archives and SHA-256 checksums are included under `sources/`, with license texts under `runtime-licenses/`. The engine uses a replaceable `libopenconnect.5.dylib` and replaceable OpenSSL dynamic libraries; system libxml2 and zlib are supplied by macOS. Optional token, smart-card, GSSAPI, proxy-discovery and localization integrations are disabled in this release runtime. Fortinet username/password support is checked before packaging. Preserve these source archives, license texts, and the existing `vpnc-script` notices when redistributing.

@@ -30,10 +30,12 @@ def transaction_path():
     return install.TARGET / '.update-transaction'
 
 
-def source_ok(path, owners=None):
+def source_ok(path, owners=None, tree_root=None):
     info = path.lstat()
     owners = owners or {0, SOURCE_UID}
-    if info.st_uid not in owners or info.st_mode & 0o022 or stat.S_ISLNK(info.st_mode):
+    link = stat.S_ISLNK(info.st_mode)
+    if (info.st_uid not in owners or (not link and info.st_mode & 0o022)
+            or (link and (tree_root is None or not install.safe_framework_link(path, tree_root)))):
         raise RuntimeError('unsafe update source')
     return info
 
@@ -46,15 +48,17 @@ def tree_files(root, owners=None):
     for base, dirs, files in os.walk(root, followlinks=False):
         for name in dirs + files:
             path = Path(base) / name
-            info = source_ok(path, owners)
-            if not (stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode)):
+            info = source_ok(path, owners, tree_root=root)
+            if not (stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode) or stat.S_ISLNK(info.st_mode)):
                 raise RuntimeError('unsafe update source')
-            if stat.S_ISREG(info.st_mode):
+            if stat.S_ISREG(info.st_mode) or stat.S_ISLNK(info.st_mode):
                 result[path.relative_to(root).as_posix()] = path
     return result
 
 
 def digest(path):
+    if path.is_symlink():
+        return hashlib.sha256(('symlink:' + os.readlink(path)).encode()).hexdigest()
     h = hashlib.sha256()
     with path.open('rb') as stream:
         for block in iter(lambda: stream.read(1024 * 1024), b''):
@@ -239,10 +243,11 @@ def make_daemon():
 
 
 def copy_tree(source, destination):
-    shutil.copytree(source, destination, symlinks=False)
+    shutil.copytree(source, destination, symlinks=True)
     for path in [destination, *destination.rglob('*')]:
         info = path.lstat()
-        os.chmod(path, 0o755 if stat.S_ISDIR(info.st_mode) or os.access(path, os.X_OK) else 0o644)
+        if not stat.S_ISLNK(info.st_mode):
+            os.chmod(path, 0o755 if stat.S_ISDIR(info.st_mode) or os.access(path, os.X_OK) else 0o644)
 
 
 def write_file(source, destination, mode):
@@ -261,7 +266,7 @@ def snapshot(paths, backup):
             info = path.lstat()
             saved.append((path, stat.S_ISDIR(info.st_mode), stat.S_IMODE(info.st_mode)))
             target = backup / str(len(saved))
-            if stat.S_ISDIR(info.st_mode): shutil.copytree(path, target)
+            if stat.S_ISDIR(info.st_mode): shutil.copytree(path, target, symlinks=True)
             else: shutil.copy2(path, target)
         else:
             saved.append((path, None, None))
@@ -378,7 +383,7 @@ def restore(saved, backup):
             else: path.unlink()
         if is_dir is not None:
             source = backup / str(index)
-            if is_dir: shutil.copytree(source, path)
+            if is_dir: shutil.copytree(source, path, symlinks=True)
             else: shutil.copy2(source, path)
             os.chmod(path, mode)
 
@@ -430,7 +435,7 @@ def apply(uid):
             staged_app = transaction / 'app'
             copy_tree(SOURCE_APP, staged_app)
             if APP.exists(): shutil.rmtree(APP)
-            shutil.copytree(staged_app, APP)
+            shutil.copytree(staged_app, APP, symlinks=True)
             if install.DAEMON.exists(): install.DAEMON.unlink()
             install.atomic_bytes(prior_daemon, install.DAEMON, 0o644)
             if install.LEGACY_DAEMON.exists(): install.LEGACY_DAEMON.unlink()

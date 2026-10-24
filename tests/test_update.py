@@ -37,7 +37,7 @@ class UpdateCheckTests(unittest.TestCase):
         p = patch.object(update, 'MANIFEST', self.target / 'update-manifest.json'); p.start(); self.addCleanup(p.stop)
         p = patch.object(update.install, 'safe_installed', side_effect=lambda p: p.lstat()); p.start(); self.addCleanup(p.stop)
         original_source_ok = update.source_ok
-        p = patch.object(update, 'source_ok', side_effect=lambda path, owners=None: original_source_ok(path, {0, os.getuid()})); p.start(); self.addCleanup(p.stop)
+        p = patch.object(update, 'source_ok', side_effect=lambda path, owners=None, tree_root=None: original_source_ok(path, {0, os.getuid()}, tree_root)); p.start(); self.addCleanup(p.stop)
         self.daemon = self.target / 'daemon.plist'
         self.helper = self.target / 'vpn-helper'
         self.policy = self.target / 'helper-policy.plist'
@@ -73,6 +73,25 @@ class UpdateCheckTests(unittest.TestCase):
              patch.object(update, 'vpn_idle', side_effect=RuntimeError('VPN service is active')):
             with self.assertRaisesRegex(RuntimeError, 'VPN service is active'):
                 update.apply(501)
+
+    def test_framework_symlinks_survive_complete_update_and_are_checked(self):
+        framework = self.source_app / 'Contents/Helpers/SN VPN Updater.app/Contents/Frameworks/Sparkle.framework'
+        (framework / 'Versions/B').mkdir(parents=True)
+        (framework / 'Versions/B/Sparkle').write_bytes(b'framework')
+        (framework / 'Versions/Current').symlink_to('B')
+        (framework / 'Sparkle').symlink_to('Versions/Current/Sparkle')
+        self._apply_patches()
+        update.apply(501)
+        installed = self.app / framework.relative_to(self.source_app)
+        self.assertTrue((installed / 'Versions/Current').is_symlink())
+        self.assertTrue((installed / 'Sparkle').is_symlink())
+        with patch('sys.stdout'):
+            self.assertTrue(update.check(501))
+        link = installed / 'Sparkle'
+        link.unlink()
+        link.symlink_to('/etc/passwd')
+        with self.assertRaisesRegex(RuntimeError, 'unsafe application contents'):
+            update.installed_map()
 
     def test_conflicting_legacy_service_definition_is_not_removed(self):
         import plistlib

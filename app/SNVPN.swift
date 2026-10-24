@@ -282,7 +282,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextFieldD
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.appearance = NSAppearance(named: .aqua)
-        if CommandLine.arguments.contains("--self-test") { Self.selfTest(); NSApp.terminate(nil); return }
+        if CommandLine.arguments.contains("--self-test") { UpdateConfiguration.selfTest(); Self.selfTest(); NSApp.terminate(nil); return }
         if CommandLine.arguments.contains("--helper-check") {
             Service.action("ping", payload: nil) { result in
                 switch result {
@@ -337,6 +337,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextFieldD
         }
         if !preview, storeError == nil, store.profiles.isEmpty { presentWelcome() }
         if let storeError { alert("连接列表无法读取，原文件已保留。\n\(storeError.localizedDescription)") }
+        if !preview { UpdateCoordinator.shared.check(manually: false) }
         timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in self?.refreshStatus() }
     }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
@@ -511,6 +512,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextFieldD
     func installMenu() {
         let main = NSMenu()
         let appItem = NSMenuItem(), appMenu = NSMenu(title: "SN VPN")
+        appMenu.addItem(withTitle: "检查更新…", action: #selector(checkForUpdates), keyEquivalent: "").target = self
         appMenu.addItem(withTitle: "从 FortiClient 导入连接…", action: #selector(importFortiProfiles), keyEquivalent: "").target = self
         appMenu.addItem(withTitle: "退出 SN VPN", action: #selector(quit), keyEquivalent: "q").target = self
         appItem.submenu = appMenu; main.addItem(appItem)
@@ -519,6 +521,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextFieldD
         editItem.submenu = editMenu; main.addItem(editItem); NSApp.mainMenu = main
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         let menu = NSMenu()
+        menu.addItem(withTitle: "检查更新…", action: #selector(checkForUpdates), keyEquivalent: "").target = self
         menu.addItem(withTitle: "从 FortiClient 导入连接…", action: #selector(importFortiProfiles), keyEquivalent: "").target = self
         menu.addItem(withTitle: "打开 SN VPN", action: #selector(openWindow), keyEquivalent: "o").target = self
         menu.addItem(NSMenuItem.separator())
@@ -534,6 +537,9 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextFieldD
         let item = NSMenuItem(title: "版本：\(BuildVersion.display)", action: nil, keyEquivalent: "")
         item.isEnabled = false
         return item
+    }
+    @objc func checkForUpdates() {
+        if !preview { DispatchQueue.main.async { UpdateCoordinator.shared.check(manually: true) } }
     }
     static func editMenu() -> NSMenu {
         let menu = NSMenu(title: "编辑")
