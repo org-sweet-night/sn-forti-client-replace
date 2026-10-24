@@ -6,6 +6,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 command -v brew >/dev/null || { echo "Install Homebrew, then run: brew install openconnect" >&2; exit 1; }
 command -v swiftc >/dev/null || { echo "Install Xcode Command Line Tools: xcode-select --install" >&2; exit 1; }
 PREFIX="$(brew --prefix openconnect)"
+SWIFT_TARGET="arm64-apple-macosx15.0"
 [[ -x "$PREFIX/bin/openconnect" ]] || { echo "Install OpenConnect: brew install openconnect" >&2; exit 1; }
 "$PREFIX/bin/openconnect" --version | /usr/bin/grep -Eq '^Supported protocols:.*fortinet' || {
   echo "The installed OpenConnect must support the fortinet protocol." >&2; exit 1;
@@ -14,9 +15,9 @@ mkdir -p "$ROOT/dist"
 STAGE="$(mktemp -d "$ROOT/dist/.runtime-prepare.XXXXXX")"
 trap 'rm -rf "$STAGE"' EXIT
 mkdir "$STAGE/service" "$STAGE/service/runtime"
-swiftc -Onone -framework Foundation -framework Security "$ROOT/helpers/vpn-keychain.swift" -o "$STAGE/service/vpn-keychain"
+swiftc -O -target "$SWIFT_TARGET" -framework Foundation -framework Security "$ROOT/helpers/vpn-keychain.swift" -o "$STAGE/service/vpn-keychain"
 cp "$STAGE/service/vpn-keychain" "$STAGE/service/vpn-profile-keychain"
-swiftc -Onone -framework Foundation -framework SystemConfiguration "$ROOT/helpers/vpn-sleep-setting.swift" -o "$STAGE/service/vpn-sleep-setting"
+swiftc -O -target "$SWIFT_TARGET" -framework Foundation -framework SystemConfiguration "$ROOT/helpers/vpn-sleep-setting.swift" -o "$STAGE/service/vpn-sleep-setting"
 /usr/bin/python3 - "$PREFIX/bin/openconnect" "$STAGE/service/runtime" <<'PY'
 import os
 from pathlib import Path

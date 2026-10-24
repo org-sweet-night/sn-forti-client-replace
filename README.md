@@ -84,14 +84,30 @@ tmp/           临时检查文件（按需创建，忽略）
 
 ### 当前支持条件
 
-- 当前 App 构建要求 **macOS 27.0 或以上**。
+- 当前 App 构建要求 **macOS 15.0 或以上**，支持 M1 及后续 Apple Silicon 芯片。
 - 随附 OpenConnect、钥匙串工具等运行时二进制为 **Apple Silicon / arm64**。
-- 当前构建使用本地 ad-hoc 签名，尚无 Developer ID 签名和公证的正式发行包，跨机器安装未完成完整验收。
+- 下载包使用 ad-hoc 签名，没有 Developer ID 签名和 Apple 公证；首次运行可能需要在系统设置中允许。跨机器安装尚待验收。
 - 运行需要可用的 `/usr/bin/python3`；部分机器需要先安装 Apple Command Line Tools 才能使用该入口。从源码构建还需要 Swift 编译工具和 macOS SDK。
 - 需要可访问的 Fortinet SSL VPN 网关，以及允许用户名密码认证的账号。
 - 首次安装、更新助手或更换授权本机账号需要 macOS 管理员权限。
 
-### 全新安装（无需 FortiClient）
+### 下载 ZIP 安装
+
+在 [GitHub Releases](https://github.com/org-sweet-night/sn-forti-client-replace/releases) 下载 Apple Silicon ZIP 和校验文件，解压后阅读包内 README，首次安装双击 `Install.command`；已有安装先断开 VPN、退出 App，再运行 `Update.command`，完成后执行 `bash scripts/update.sh --check`。无需 Homebrew 或自行编译；仍需 Apple Command Line Tools 提供 Python 3。详见 [下载包安装说明](docs/DISTRIBUTION.md)。
+
+维护者从已提交源码构建发布包：
+
+```bash
+bash scripts/build-release-runtime.sh
+bash scripts/prepare-runtime.sh
+bash app/build.sh
+python3 -m unittest discover -s tests
+python3 scripts/release.py --package
+```
+
+下载包的连接引擎和 TLS 动态库来自固定版本的上游源码构建，最低系统版本与全部非系统依赖会在打包时检查；不使用本机 Homebrew 的引擎作为发布输入。ZIP 包含对应源码、许可证、校验清单和完整安装/升级入口。构建命令不会更新本机已安装的 App 或断开 VPN。
+
+### 从源码全新安装（无需 FortiClient）
 
 先安装 [Homebrew](https://brew.sh/) 和 Apple Command Line Tools，再安装 OpenConnect：
 
@@ -224,7 +240,7 @@ bash scripts/update.sh
 
 ## 第三方组件与分发
 
-连接引擎来自 [OpenConnect](https://www.infradead.org/openconnect/)。新安装使用本机 Homebrew 提供的版本，准备脚本会校验其支持 Fortinet 协议。仓库只保存本项目源码和 `vpnc-script` 源码，不分发本机复制的 OpenConnect、动态库或钥匙串二进制。
+连接引擎来自 [OpenConnect](https://www.infradead.org/openconnect/)。新安装使用本机 Homebrew 提供的版本，准备脚本会校验其支持 Fortinet 协议。源码仓库不保存生成的二进制。Release ZIP 使用 `scripts/build-release-runtime.sh` 从固定上游源码构建 OpenConnect 与 OpenSSL，并随包提供对应完整源码和许可证；不会分发本机 Homebrew 的依赖副本。
 
 第三方组件及许可证说明见 [THIRD_PARTY_NOTICES.md](docs/THIRD_PARTY_NOTICES.md)。项目自身尚未指定整体开源许可证；第三方组件继续适用各自许可证。
 

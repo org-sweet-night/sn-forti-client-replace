@@ -8,6 +8,10 @@ if [[ "$EUID" -eq 0 || "$#" -gt 1 || ( "$MODE" != --apply && "$MODE" != --check 
   exit 1
 fi
 
+if [[ -f "$ROOT/RELEASE.json" && ( "$MODE" == --apply || "$MODE" == --check ) ]]; then
+  /usr/bin/python3 "$ROOT/scripts/release.py" --verify "$ROOT"
+fi
+
 # Stage only release inputs, so administrator tools need no external-volume access.
 STAGE="$(mktemp -d /private/tmp/snvpn-update.XXXXXX)"
 trap 'rm -rf "$STAGE"' EXIT

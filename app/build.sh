@@ -7,6 +7,7 @@ APP="$ROOT/dist/SN VPN.app"
 CONTENTS="$APP/Contents"
 mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources" "$CONTENTS/Library/HelperTools" "$ROOT/dist"
 BUILD_LOCK="$ROOT/dist/.build-lock"
+SWIFT_TARGET="arm64-apple-macosx15.0"
 if ! mkdir "$BUILD_LOCK" 2>/dev/null; then
   echo "Another build is already using $ROOT/dist" >&2
   exit 1
@@ -16,7 +17,7 @@ VERSION_SWIFT="$ROOT/dist/BuildVersion.swift"
 /usr/bin/python3 "$HERE/version.py" --self-test
 /usr/bin/python3 "$HERE/version.py" "$VERSION_SWIFT"
 HELPER="$CONTENTS/Library/HelperTools/local.snvpn.helper"
-swiftc -Onone -framework Foundation "$HERE/VPNHelperProtocol.swift" "$HERE/VPNHelper.swift" -o "$HELPER"
+swiftc -O -target "$SWIFT_TARGET" -framework Foundation "$HERE/VPNHelperProtocol.swift" "$HERE/VPNHelper.swift" -o "$HELPER"
 "$HELPER" --self-test
 /usr/bin/codesign --force --options runtime --identifier local.snvpn.helper --sign - "$HELPER"
 /usr/bin/python3 - "$HELPER" "$CONTENTS/Resources/helper-requirement.txt" <<'PY'
@@ -27,7 +28,7 @@ digest = re.search(r'^CDHash=([0-9a-f]{40})$', result.stderr, re.M)
 assert digest
 Path(sys.argv[2]).write_text('identifier "local.snvpn.helper" and cdhash H"' + digest[1] + '"')
 PY
-swiftc -Onone -framework AppKit -framework Foundation -framework ServiceManagement "$HERE/VPNHelperProtocol.swift" "$HERE/VPNHelperClient.swift" "$VERSION_SWIFT" "$HERE/SNVPN.swift" -o "$CONTENTS/MacOS/SN VPN"
+swiftc -O -target "$SWIFT_TARGET" -framework AppKit -framework Foundation -framework ServiceManagement "$HERE/VPNHelperProtocol.swift" "$HERE/VPNHelperClient.swift" "$VERSION_SWIFT" "$HERE/SNVPN.swift" -o "$CONTENTS/MacOS/SN VPN"
 cat > "$CONTENTS/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -38,7 +39,7 @@ cat > "$CONTENTS/Info.plist" <<PLIST
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>$(sed -n 's/.*marketing = "\([^"]*\)".*/\1/p' "$VERSION_SWIFT")</string>
 <key>CFBundleVersion</key><string>$(sed -n 's/.*build = "\([^"]*\)".*/\1/p' "$VERSION_SWIFT")</string>
-<key>LSMinimumSystemVersion</key><string>27.0</string>
+<key>LSMinimumSystemVersion</key><string>15.0</string>
 <key>NSHighResolutionCapable</key><true/>
 <key>LSUIElement</key><true/>
 <key>CFBundleIconFile</key><string>AppIcon</string>

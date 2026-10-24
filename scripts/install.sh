@@ -17,9 +17,13 @@ if [[ "$(uname -m)" != arm64 ]]; then
   echo '当前安装脚本仅支持 Apple Silicon Mac。' >&2
   exit 1
 fi
-/usr/bin/python3 -c 'import platform, sys; sys.exit(0 if int(platform.mac_ver()[0].split(".")[0]) >= 27 else "需要 macOS 27 或以上。")'
-bash "$ROOT/scripts/prepare-runtime.sh"
-bash "$ROOT/app/build.sh"
+/usr/bin/python3 -c 'import platform, sys; sys.exit(0 if int(platform.mac_ver()[0].split(".")[0]) >= 15 else "需要 macOS 15 或以上。")'
+if [[ -f "$ROOT/RELEASE.json" ]]; then
+  /usr/bin/python3 "$ROOT/scripts/release.py" --verify "$ROOT"
+else
+  bash "$ROOT/scripts/prepare-runtime.sh"
+  bash "$ROOT/app/build.sh"
+fi
 
 sudo -v
 STEP='初始化运行环境'
