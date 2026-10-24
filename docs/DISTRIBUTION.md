@@ -28,7 +28,7 @@ sudo /usr/bin/ditto 'dist/SN VPN.app' '/Applications/SN VPN.app'
 sudo /usr/bin/python3 -I scripts/install.py --install-helper '/Applications/SN VPN.app' "$(id -u)"
 ```
 
-这些是检查后的维修步骤，不能用于覆盖他人的已有安装。完成后打开 App，并用 `bash scripts/update.sh --check` 检查托管文件、助手通信和凭据。此过程不需要删除或重建连接配置。
+这些是检查后的维修步骤，不能用于覆盖他人的已有安装。完成后打开 App，确认助手可以读取连接状态，再创建或导入配置。此过程不需要删除或重建连接配置；`update.sh --check` 的完整性清单由成功的完整升级生成，不能用来认证这次补齐安装。
 
 ## 范围与验证
 
