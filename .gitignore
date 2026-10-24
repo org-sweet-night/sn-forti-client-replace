@@ -4,6 +4,7 @@ __pycache__/
 /.venv/
 /app/dist/
 /app/reference/
+/app/.build-number-*
 /runtime/
 /vpn-keychain
 /vpn-profile-keychain

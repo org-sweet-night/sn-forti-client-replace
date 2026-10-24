@@ -4,9 +4,9 @@
 
 FortiReplace 使用自带的 OpenConnect 连接 Fortinet / FortiGate SSL VPN，提供菜单栏操作、多连接配置、自动重连和独立的启动选项，适合通过用户名和密码接入办公网络的场景。仓库名称为 [`sn-forti-client-replace`](https://github.com/org-sweet-night/sn-forti-client-replace)。
 
-本项目替代的是 **FortiClient 的基础 SSL VPN 连接功能**。FortiClient 的 IPsec、企业身份集成、EMS、ZTNA 和终端防护不在当前实现范围内；不同版本和授权下的官方产品能力见 [Fortinet 产品说明](https://www.fortinet.com/products/endpoint-security/forticlient)。本项目为独立的非官方客户端。
+本项目替代的是 **FortiClient 的基础 SSL VPN 连接功能**。FortiClient 的 IPsec、企业身份集成、EMS、ZTNA 和终端防护不在当前实现范围内。本项目为独立的非官方客户端。
 
-> 当前构建产物仍名为 `SN VPN.app`，窗口和菜单也保留 SN VPN 名称。本文统一使用 FortiReplace 作为项目名；下方命令中的实际 App 名称和安装路径仍按现有代码填写。
+应用名称为 **SN VPN**，构建产物为 `app/dist/SN VPN.app`。FortiReplace 是项目名。
 
 ## 已实现的功能
 
@@ -20,7 +20,7 @@ FortiReplace 使用自带的 OpenConnect 连接 Fortinet / FortiGate SSL VPN，�
 | 连接切换 | 可以切换到另一条配置；配置或认证失败时尝试恢复原配置与凭据，恢复失败会明确报错。 |
 | 路由和 DNS 配置 | 通过随附的 `vpnc-script` 应用、清理网关下发的网络配置。具体分流结果取决于网关策略，没有图形化路由或 DNS 策略编辑器。 |
 | 网络中断后的恢复 | OpenConnect 尝试会话重连；网络错误或会话过期退出后，后台服务按节流策略重新启动。认证、证书、额外认证或配置错误会停止自动重试。 |
-| 菜单栏控制 | 菜单栏显示连接状态，支持打开窗口、连接和断开；主窗口提供重新验证入口。App 不占用 Dock。 |
+| 菜单栏控制 | 菜单栏显示连接状态，支持导入配置、打开窗口、连接和断开；退出上方显示版本信息，主窗口提供重新验证入口。App 不占用 Dock。 |
 | 开机启动 | 登录 macOS 时打开 App，由系统登录项管理；与自动连接分别保存和控制。 |
 | 自动连接 | 打开或重新打开 App 时连接所选配置；已有连接运行时保持原连接。 |
 | 日常启停免重复管理员密码 | 首次安装或更新受限助手需要管理员授权；之后由助手执行固定 VPN 操作。助手按需启动，空闲后退出。 |
@@ -75,7 +75,7 @@ FortiReplace 使用自带的 OpenConnect 连接 Fortinet / FortiGate SSL VPN，�
 
 ### 全新安装（无需 FortiClient）
 
-先安装 Apple Command Line Tools、Homebrew，以及 OpenConnect：
+先安装 [Homebrew](https://brew.sh/) 和 Apple Command Line Tools，再安装 OpenConnect：
 
 ```bash
 xcode-select --install
@@ -96,45 +96,65 @@ bash install.sh
 
 脚本检测到已有 App、运行环境或启动项时会停止，保留原状态。若安装中途失败，请先检查已完成的步骤，再按下方维护入口处理，避免覆盖现有配置。
 
-全新安装若在“初始化运行环境”阶段失败，初始化器会清理自己的暂存目录；若已完成初始化、在复制 App 或安装助手时失败，运行环境仍保持未连接状态。确认这是本次未完成的安装后，可用下面的分步命令完成 App 复制与助手安装，无需删除运行环境或重新创建配置。
+全新安装若在“初始化运行环境”阶段失败，初始化器会清理自己的暂存目录；若已完成初始化、在复制 App 或安装助手时失败，运行环境仍保持未连接状态。确认这是本次未完成的安装后，补齐 App 复制与助手安装即可，无需删除运行环境或重新创建配置；助手安装命令见下方维护章节。
 
-### 仅构建与维护入口
+### 构建
+
+仅修改 App 时：
 
 ```bash
-bash prepare-runtime.sh
 bash app/build.sh
 ```
 
+全新安装前，或需要重新准备本地 OpenConnect、动态库和钥匙串工具时，再执行 `bash prepare-runtime.sh`。该命令只准备仓库内的运行依赖，不会更新系统已安装的运行环境。
+
 产物为 `app/dist/SN VPN.app`，其中包含签名后的受限助手。构建会执行 App 与助手自检，并校验代码签名。生成的二进制、运行时和本机恢复资料不会提交到仓库。
 
-干净环境可分步安装运行时和助手：
+### 已有安装的维护
+
+`install.sh` 仅用于全新安装。已有安装须先退出 App，按改动范围维护：
+
+- 仅更新 App：用 `app/dist/SN VPN.app` 替换系统 App，并重新安装助手。助手授权绑定 App 签名，即使助手源码未变，也需要同步安装。
+- 更新控制逻辑或迁移旧启动项：先执行 `sudo /usr/bin/python3 -I install.py --upgrade`。该入口只更新 `control.py`、迁移旧服务定义，不更新 `connect.py`、`setup.py`、OpenConnect 或其他运行依赖。
+- 更换运行引擎或其他运行代码：当前没有完整的一键升级入口，不能把 `--upgrade` 视为整个运行环境升级。
+
+系统 App 替换后，安装并检查助手：
 
 ```bash
-sudo /usr/bin/python3 -I install.py --initialize
-# 将本次构建的 SN VPN.app 放到 /Applications 后执行：
-sudo /usr/bin/ditto "app/dist/SN VPN.app" "/Applications/SN VPN.app"
 sudo /usr/bin/python3 -I install.py --install-helper "/Applications/SN VPN.app" "$(id -u)"
+"/Applications/SN VPN.app/Contents/MacOS/SN VPN" --helper-check
 ```
 
-`--initialize` 创建运行环境、控制锁和待连接的服务定义，不读取 FortiClient 配置、不创建虚假的账号信息，也不启动隧道。实际连接信息在 App 保存，首次验证成功后才写入系统运行配置并保存钥匙串凭据。
+检查通过后移除旧版应用副本；保留连接配置与钥匙串凭据。退出 App 和上述助手更新不会主动断开已有 VPN 隧道。若替换或安装失败，应恢复匹配的 App 与助手后再操作 VPN。
 
-已有安装升级：先退出旧版 App，运行 `sudo /usr/bin/python3 -I install.py --upgrade` 更新控制代码、迁移旧启动项，再用本次构建替换 App，并执行上面的助手安装命令；安装验证通过后移除旧版副本。该维护入口保留现有配置和钥匙串凭据，不主动重启当前隧道。
+全新安装中途失败时，先检查已完成的步骤。`--initialize` 只用于尚未安装的环境，不要对已有安装重复初始化；它创建待连接服务，不读取 FortiClient 配置，也不连接 VPN。
 
 App 与助手相互校验指定版本的代码签名，助手还校验调用账号。**更新 App 时必须同时更新助手**，版本不匹配时会拒绝操作。助手不提供任意命令执行接口。
 
 首次连接、修改连接目标或执行“重新验证并连接”时，仍可能需要证书确认和 VPN 账号密码；这与反复输入 Mac 管理员密码是两回事。
-
-旧版命令 `sudo /usr/bin/python3 -I install.py '<现有 FortiClient SSL VPN 配置名>'` 保留兼容，仅用于确实存在该配置的全新环境；它会验证账号并启动 VPN。通常应使用上面的独立安装流程。
 
 ## 版本与构建
 
 菜单栏菜单底部、“退出”上方显示独立版本信息，上下各有分隔线，例如 `版本：1.0.84-abcdef11`。
 
 - 主版本在 `app/version.py` 中从 `1` 开始，仅在重大变化（例如新增 Windows、Linux 支持）时手动升级；开启新主版本时，将 `app/build-number` 重置为 `0`。
-- `app/build-number` 保存当前主版本的累计构建号，每次构建先加 1；失败的构建也占用该号，不回退复用。显示格式为 `主版本.构建号整除100.构建号余100-Git短哈希`。
+- `app/build-number` 保存当前主版本的累计构建号，构建通过版本前置检查后，将加 1 的值写入计数器；此后编译或签名失败也不回退复用，版本分配前失败则不占号。显示格式为 `主版本.构建号整除100.构建号余100-Git短哈希`。
 - build 84 显示 `1.0.84`，build 100 显示 `1.1.0`，build 184 显示 `1.1.84`，build 200 显示 `1.2.0`。
-- 哈希为构建源码的 Git 提交前 8 位。发布构建应从已提交的源码开始，构建号文件随发布提交，构建产物不入库。源码未提交时追加 `-dirty` 标记。
-- 原固定构建号为 5，新规则首次构建为 `1.0.6`。构建号不以 Git 提交数量计算。
+- 哈希为构建源码的 Git 提交前 8 位。发布构建应从已提交的源码开始，构建后单独提交构建号文件，因此版本中的源码哈希可以不同于最新的构建记录或文档提交。构建产物不入库。版本脚本检查的 App 源文件存在未提交改动时追加 `-dirty` 标记；仅文档或构建号改变不追加。
+- 构建号不以 Git 提交数量计算。只修改文档且不重新构建时，不增加构建号。
+- 同一工作区不允许并发构建；构建锁位于 `app/dist/.build-lock`。异常终止遗留锁时，先确认没有构建进程，再移除该锁目录。
+
+### 最近交付记录（2026-10-24）
+
+| 项目 | 已核验记录 |
+| --- | --- |
+| 应用版本 | `1.0.6-9b3cced5`（build 6） |
+| 构建源码 | `9b3cced5` |
+| 构建号记录提交 | `a510eab` |
+| 本机安装 | 与本地构建产物逐文件一致，旧版应用副本已移除 |
+| 已通过检查 | 58 项离线测试、版本边界与计数检查、App/助手自检、代码签名、安装后助手通信 |
+
+以上是该次交付记录，不代表跨设备或完整 VPN 业务验收。
 
 ## 验证
 
@@ -144,13 +164,15 @@ App 与助手相互校验指定版本的代码签名，助手还校验调用账�
 /usr/bin/python3 -m unittest discover
 ```
 
-`bash app/build.sh` 还执行 App、菜单和助手自检及代码签名校验。安装后可执行只读助手连通检查：
+无需生成新构建号即可检查版本计算：
 
 ```bash
-"/Applications/SN VPN.app/Contents/MacOS/SN VPN" --helper-check
+/usr/bin/python3 app/version.py --self-test
 ```
 
-这些检查不代表新设备安装、重启后的启动链路、所有网关、路由、DNS 或业务服务已验收。菜单金锁的探测范围见上文。
+`bash app/build.sh` 会执行版本计算、App 菜单信息项和助手自检，以及代码签名校验；它会分配新构建号。菜单自检不等于实际截图检查。
+
+尚未完成菜单实际截图、新设备安装、重启后的启动链路、所有网关、路由、DNS 或业务服务的完整验收。菜单金锁的探测范围见上文。
 
 ## 第三方组件与分发
 
@@ -158,4 +180,4 @@ App 与助手相互校验指定版本的代码签名，助手还校验调用账�
 
 第三方组件及许可证说明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。项目自身尚未指定整体开源许可证；第三方组件继续适用各自许可证。
 
-本机恢复副本、参考资料、运行日志、连接配置与凭据已列入忽略规则。文档和示例使用占位地址，个人账号、真实网关、证书和业务数据应由每位使用者自行配置。
+`app/dist/`、本地运行依赖、缓存、参考资料、运行日志及本地连接配置均已忽略；过时截图、日志和维护恢复资料不作为源码保留。文档和示例使用占位地址，个人账号、真实网关、证书和业务数据应由每位使用者自行配置。
