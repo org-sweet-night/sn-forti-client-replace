@@ -85,10 +85,10 @@ def control_action(uid, control, action):
         return False
 
 
-def validate_release(archive, destination):
+def validate_release(archive, destination, uid):
     package_update.validate_zip(archive)
     destination.mkdir()
-    subprocess.run(['/usr/bin/ditto', '-x', '-k', str(archive), str(destination)], check=True,
+    subprocess.run(['/usr/bin/tar', '--no-same-owner', '-xf', str(archive), '-C', str(destination)], check=True,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     roots = list(destination.iterdir())
     if len(roots) != 1 or not roots[0].is_dir():
@@ -96,7 +96,7 @@ def validate_release(archive, destination):
     release = roots[0]
     safe_root_path(release / 'scripts/update.py', allow_sticky=True)
     safe_root_path(release / 'service/control.py', allow_sticky=True)
-    subprocess.run(['/usr/bin/python3', '-IB', release / 'scripts/release.py', '--verify', release], check=True,
+    subprocess.run(user_command(uid, '/usr/bin/python3', '-IB', release / 'scripts/release.py', '--verify', release), check=True,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return release
 
@@ -117,7 +117,7 @@ def install(archive):
         uid = trusted_uid()
         safe_root_path(control)
         with tempfile.TemporaryDirectory(prefix='snvpn-sparkle-', dir=TMPDIR) as temporary:
-            release = validate_release(archive, Path(temporary) / 'release')
+            release = validate_release(archive, Path(temporary) / 'release', uid)
             updater = release / 'scripts/update.py'
             if transaction_exists():
                 raise RuntimeError('unfinished update transaction')

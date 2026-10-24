@@ -8,6 +8,7 @@ import tempfile
 import unittest
 import zipfile
 import stat
+import struct
 import warnings
 from unittest.mock import patch
 
@@ -128,6 +129,44 @@ class SparkleInstallTests(unittest.TestCase):
                     return_value=subprocess.CompletedProcess([], 0, payload)):
                 with self.assertRaises(RuntimeError):
                     sparkle.status(501, Path('/managed/control.py'))
+
+    def test_extraction_ignores_archive_ownership_and_preserves_framework_link(self):
+        native_run = subprocess.run
+        calls = []
+        def runner(command, **kwargs):
+            calls.append(command)
+            if command[0] == '/usr/bin/tar':
+                return native_run(command, **kwargs)
+            return subprocess.CompletedProcess(command, 0)
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            archive = base / 'release.zip'
+            root = 'SN-VPN-1.2.3'
+            framework = root + '/dist/SN VPN.app/Contents/Helpers/SN VPN Updater.app/Contents/Frameworks/Sparkle.framework'
+            with zipfile.ZipFile(archive, 'w') as output:
+                for name in ('scripts/update.py', 'service/control.py'):
+                    entry = zipfile.ZipInfo(root + '/' + name)
+                    entry.external_attr = (stat.S_IFREG | 0o644) << 16
+                    entry.extra = struct.pack('<HHIIHH', 0x5855, 12, 0, 0, 1234, 1234)
+                    output.writestr(entry, b'unchanged signed bytes')
+                link = zipfile.ZipInfo(framework + '/Versions/Current')
+                link.external_attr = (stat.S_IFLNK | 0o777) << 16
+                output.writestr(link, 'A')
+                binary = zipfile.ZipInfo(framework + '/Versions/A/binary')
+                binary.external_attr = (stat.S_IFREG | 0o755) << 16
+                output.writestr(binary, b'signed binary bytes')
+            with patch.object(sparkle, 'safe_root_path'), patch.object(sparkle.subprocess, 'run', side_effect=runner):
+                release = sparkle.validate_release(archive, base / 'extracted', 501)
+            self.assertEqual(calls[0][:3], ['/usr/bin/tar', '--no-same-owner', '-xf'])
+            self.assertEqual(calls[1], ['/bin/launchctl', 'asuser', '501', '/usr/bin/python3',
+                                      '-IB', str(release / 'scripts/release.py'), '--verify', str(release)])
+            extracted = release / 'scripts/update.py'
+            self.assertEqual(extracted.stat().st_uid, os.geteuid())
+            self.assertEqual(extracted.read_bytes(), b'unchanged signed bytes')
+            current = base / 'extracted' / framework / 'Versions/Current'
+            self.assertTrue(current.is_symlink())
+            self.assertEqual(os.readlink(current), 'A')
+            self.assertEqual((current / 'binary').read_bytes(), b'signed binary bytes')
 
     def test_zip_validator_accepts_internal_framework_link(self):
         with tempfile.TemporaryDirectory() as directory:
