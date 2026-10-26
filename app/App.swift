@@ -19,7 +19,7 @@ struct ProfileStore: Codable, Equatable {
 private struct LegacyProfile: Decodable { var name: String; var server: String; var port: Int; var username: String }
 
 enum VPNState: String { case connected, connecting, reconnecting, stopped, degraded, error }
-struct StatusReply {
+struct StatusReply: Equatable {
     let state: VPNState
     let reachable: Bool
     let autostart: Bool
@@ -222,7 +222,7 @@ enum Service {
 }
 
 final class DotView: NSView {
-    var color: NSColor = .secondaryLabelColor { didSet { needsDisplay = true } }
+    var color: NSColor = .secondaryLabelColor { didSet { if color != oldValue { needsDisplay = true } } }
     override func draw(_ dirtyRect: NSRect) { color.setFill(); NSBezierPath(ovalIn: bounds.insetBy(dx: 2, dy: 2)).fill() }
 }
 final class SemanticBackgroundView: NSView {
@@ -231,13 +231,17 @@ final class SemanticBackgroundView: NSView {
     override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); needsDisplay = true }
 }
 
-final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextFieldDelegate {
+final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextFieldDelegate, NSMenuDelegate {
     static let gold = NSColor(srgbRed: 212 / 255.0, green: 175 / 255.0, blue: 55 / 255.0, alpha: 1)
     static func previewAppearance(named name: String) -> NSAppearance? {
         switch name { case "dark": return NSAppearance(named: .darkAqua); case "light": return NSAppearance(named: .aqua); default: return nil }
     }
 
     var window: NSWindow!, statusItem: NSStatusItem!, timer: Timer?
+    var statusRequest: (@escaping (Result<StatusReply, Error>) -> Void) -> Void = Service.status
+    var statusRequestInFlight = false, statusRefreshPending = false, statusGeneration = 0
+    var statusMonitor: StatusMonitor?, wakeObserver: NSObjectProtocol?
+    private var accessibilityText: String?, iconConnected: Bool?
     var store = ProfileStore(), storeError: Error?, lastStatus: StatusReply?
     var busy = false, preview = false, testMode = false, operationMessage = "", renderScenario: String?, previewAppearance: NSAppearance?
     var autoConnectOnOpen = false, launchConnectionPending = false
@@ -283,7 +287,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextFieldD
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.appearance = nil
-        if CommandLine.arguments.contains("--self-test") { UpdateConfiguration.selfTest(); Self.selfTest(); NSApp.terminate(nil); return }
+        if CommandLine.arguments.contains("--self-test") { UpdateConfiguration.selfTest(); Self.selfTest(); StatusMonitor.selfTest(); EnergyTests.run(); NSApp.terminate(nil); return }
         if CommandLine.arguments.contains("--helper-check") {
             Service.action("ping", payload: nil) { result in
                 switch result {
@@ -311,7 +315,12 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextFieldD
             previewAppearance = Self.previewAppearance(named: args[i + 1])
         }
         buildWindow(); installMenu(); refreshList(); updateDetails(); showWindow()
-        if !preview { refreshStatus() }
+        if !preview {
+            statusMonitor = StatusMonitor(directory: URL(fileURLWithPath: VPNHelperContract.installedBase)) { [weak self] in self?.refreshStatus(force: true) }
+            statusMonitor?.start()
+            wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in self?.refreshStatus(force: true) }
+            refreshStatus()
+        }
         if renderScenario != nil, let i = args.firstIndex(of: "--render-preview"), i + 2 < args.count {
             if renderScenario == "sheet" { presentEditor(selected) }
             if renderScenario == "welcome" { presentWelcome(availableProfiles: []) }
@@ -342,7 +351,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextFieldD
         if !preview, storeError == nil, store.profiles.isEmpty { presentWelcome() }
         if let storeError { alert("连接列表无法读取，原文件已保留。\n\(storeError.localizedDescription)") }
         if !preview { UpdateCoordinator.shared.check(manually: false) }
-        timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in self?.refreshStatus() }
+        scheduleStatusRefresh()
     }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
         showWindow(); launchConnectionPending = autoConnectOnOpen && !store.profiles.isEmpty && storeError == nil; refreshStatus()
@@ -350,8 +359,16 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextFieldD
         return true
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
-    func windowShouldClose(_ sender: NSWindow) -> Bool { sender.orderOut(nil); return false }
+    func windowShouldClose(_ sender: NSWindow) -> Bool { sender.orderOut(nil); scheduleStatusRefresh(); return false }
     func showWindow() { window?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true) }
+    func applicationDidBecomeActive(_ notification: Notification) { if statusMonitor != nil { updateControls(); refreshStatus() } }
+    func applicationDidResignActive(_ notification: Notification) { if statusMonitor != nil { scheduleStatusRefresh() } }
+    func windowDidMiniaturize(_ notification: Notification) { scheduleStatusRefresh() }
+    func windowDidDeminiaturize(_ notification: Notification) { refreshStatus() }
+    func applicationWillTerminate(_ notification: Notification) {
+        timer?.invalidate(); statusMonitor?.stop()
+        if let wakeObserver { NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver) }
+    }
 
     func buildWindow() {
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 820, height: 550), styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
@@ -474,7 +491,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextFieldD
         autoConnectButton.state = autoConnectOnOpen ? .on : .off
         autoConnectButton.isEnabled = !busy
         launchAtLoginButton.isEnabled = !busy
-        if !preview {
+        if !preview && !testMode {
             let status = SMAppService.mainApp.status
             launchAtLoginButton.state = status == .enabled || status == .requiresApproval ? .on : .off
             launchAtLoginButton.title = status == .requiresApproval ? "开机启动（等待系统允许）" : "开机启动（登录 macOS 时打开 App）"
@@ -498,14 +515,23 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextFieldD
         updateControls()
     }
     func updateStatusAccessibility() {
-        let text = busy ? operationMessage : (lastStatus.map { "\($0.title)，\($0.message)" } ?? "正在读取状态")
-        statusItem?.button?.toolTip = "\(Brand.displayName)：\(text)"
-        statusItem?.button?.setAccessibilityLabel("\(Brand.displayName)：\(text)")
-        statusItem?.button?.setAccessibilityHelp("当前 VPN 状态：\(text)")
+        guard let button = statusItem?.button else { return }
+        let text = busy ? operationMessage : (statusRequestInFlight ? "正在检查连接状态" : (lastStatus.map { "\($0.title)，\($0.message)" } ?? "正在读取状态"))
+        if text != accessibilityText {
+            accessibilityText = text
+            button.toolTip = "\(Brand.displayName)：\(text)"
+            button.setAccessibilityLabel("\(Brand.displayName)：\(text)")
+            button.setAccessibilityHelp("当前 VPN 状态：\(text)")
+        }
         let isConnected = !busy && lastStatus?.state == .connected && lastStatus?.reachable == true
-        let tint = isConnected ? Self.gold : NSColor(calibratedWhite: 0.5, alpha: 1)
-        statusItem?.button?.image = Self.lockIcon(tint, size: NSSize(width: 18, height: 18), description: "\(Brand.displayName)：\(text)")
+        if iconConnected != isConnected {
+            iconConnected = isConnected
+            button.image = Self.statusIcon(connected: isConnected)
+        }
     }
+    private static let connectedIcon = lockIcon(gold, size: NSSize(width: 18, height: 18), description: "VPN 已连接")
+    private static let disconnectedIcon = lockIcon(NSColor(calibratedWhite: 0.5, alpha: 1), size: NSSize(width: 18, height: 18), description: "VPN 未连接")
+    static func statusIcon(connected: Bool) -> NSImage? { connected ? connectedIcon : disconnectedIcon }
     func installMenu() {
         let main = NSMenu()
         let appItem = NSMenuItem(), appMenu = NSMenu(title: Brand.displayName)
@@ -528,7 +554,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextFieldD
         menu.addItem(Self.versionMenuItem())
         menu.addItem(NSMenuItem.separator())
         menu.addItem(withTitle: "退出（不会主动断开）", action: #selector(quit), keyEquivalent: "q").target = self
-        statusItem.menu = menu; updateStatusAccessibility()
+        menu.delegate = self; statusItem.menu = menu; updateStatusAccessibility()
     }
     static func versionMenuItem() -> NSMenuItem {
         let item = NSMenuItem(title: "版本：\(BuildVersion.display)", action: nil, keyEquivalent: "")
@@ -547,17 +573,55 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextFieldD
         menu.addItem(withTitle: "全选", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         return menu
     }
-    func refreshStatus() {
-        if preview { return }
-        Service.status { [weak self] result in DispatchQueue.main.async {
+    static func pollInterval(status: StatusReply?, visible: Bool) -> TimeInterval {
+        if status?.state == .connecting || status?.state == .reconnecting { return visible ? 5 : 15 }
+        return visible ? 60 : 300
+    }
+    func scheduleStatusRefresh() {
+        timer?.invalidate(); timer = nil
+        guard !preview, !testMode, !busy, !statusRequestInFlight else { return }
+        let visible = window?.isVisible == true && window?.isMiniaturized == false && NSApp.isActive
+        let interval = Self.pollInterval(status: lastStatus, visible: visible)
+        let next = Timer(timeInterval: interval, repeats: false) { [weak self] _ in self?.refreshStatus() }
+        next.tolerance = interval * 0.2
+        timer = next; RunLoop.main.add(next, forMode: .common)
+    }
+    func menuWillOpen(_ menu: NSMenu) { refreshStatus() }
+    func refreshStatus(force: Bool = false) {
+        guard !preview else { return }
+        if force { statusGeneration += 1 }
+        if busy { statusRefreshPending = true; return }
+        if statusRequestInFlight {
+            if force { statusRefreshPending = true }
+            return
+        }
+        timer?.invalidate(); timer = nil
+        statusRefreshPending = false
+        statusRequestInFlight = true
+        let generation = statusGeneration
+        updateStatusAccessibility()
+        statusRequest { [weak self] result in DispatchQueue.main.async {
             guard let self else { return }
-            switch result {
-            case .success(let status): self.lastStatus = status; self.connectOnOpen(status: status)
-            case .failure:
-                self.launchConnectionPending = false
-                self.lastStatus = StatusReply(state: .error, reachable: false, autostart: false, message: "无法读取 VPN 状态", profileID: nil)
+            self.statusRequestInFlight = false
+            if generation == self.statusGeneration && !self.busy {
+                let status: StatusReply
+                switch result {
+                case .success(let value): status = value
+                case .failure:
+                    self.launchConnectionPending = false
+                    status = StatusReply(state: .error, reachable: false, autostart: false, message: "无法读取 VPN 状态", profileID: nil)
+                }
+                let changed = status != self.lastStatus
+                self.lastStatus = status
+                self.connectOnOpen(status: status)
+                if changed { self.updateActiveBanner(); self.updateControls() }
             }
-            self.updateActiveBanner(); self.updateControls(); self.updateStatusAccessibility()
+            self.updateStatusAccessibility()
+            if self.statusRefreshPending && !self.busy {
+                self.statusRefreshPending = false; self.refreshStatus()
+            } else {
+                self.statusMonitor?.start(); self.scheduleStatusRefresh()
+            }
         } }
     }
     func commit(_ candidate: ProfileStore) throws {
@@ -694,7 +758,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextFieldD
             guard let next = try? ProfileStorage.remove(profile.id, from: store) else { return }
             store = next; refreshList(); updateDetails(); return
         }
-        guard !busy else { return }; busy = true; operationMessage = "正在删除连接配置…"; updateControls()
+        guard !busy else { return }; busy = true; statusGeneration += 1; operationMessage = "正在删除连接配置…"; updateControls(); updateStatusAccessibility()
         Service.action("forget-profile", payload: ["id": profile.id]) { [weak self] result in DispatchQueue.main.async {
             guard let self else { return }; self.busy = false; self.operationMessage = ""
             switch result {
@@ -705,7 +769,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextFieldD
                 } catch { self.alert("服务端已移除此配置，但本地列表尚未同步；可重试以完成同步。\n\(error.localizedDescription)") }
             case .failure(let error): self.alert(error.localizedDescription)
             }
-            self.updateControls()
+            self.refreshStatus(force: true); self.updateControls(); self.updateStatusAccessibility()
         } }
     }
     @objc func primaryAction() {
@@ -720,13 +784,13 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextFieldD
             lastStatus = StatusReply(state: .connected, reachable: true, autostart: true, message: "预览：连接状态", profileID: profile.id)
             updateActiveBanner(); updateControls(); updateStatusAccessibility(); return
         }
-        busy = true; operationMessage = "正在连接 VPN…"; updateControls()
+        busy = true; statusGeneration += 1; operationMessage = "正在连接 VPN…"; updateControls(); updateStatusAccessibility()
         var payload: [String: Any] = ["id": profile.id, "name": profile.name, "server": profile.server, "port": profile.port, "username": profile.username]
         if reauth { payload["reauth"] = true }
         Service.action("connect-profile", payload: payload) { [weak self] result in DispatchQueue.main.async {
             guard let self else { return }; self.busy = false; self.operationMessage = ""
             if case .failure(let error) = result { self.alert(error.localizedDescription) }
-            self.refreshStatus(); self.updateControls()
+            self.refreshStatus(force: true); self.updateControls(); self.updateStatusAccessibility()
         } }
     }
     @objc func updateLogin() { connectSelected(reauth: true) }
@@ -736,11 +800,11 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextFieldD
             lastStatus = StatusReply(state: .stopped, reachable: false, autostart: false, message: "预览：当前未连接", profileID: nil)
             updateActiveBanner(); updateControls(); updateStatusAccessibility(); return
         }
-        busy = true; operationMessage = "正在断开 VPN…"; updateControls()
+        busy = true; statusGeneration += 1; operationMessage = "正在断开 VPN…"; updateControls(); updateStatusAccessibility()
         Service.action("stop", payload: nil) { [weak self] result in DispatchQueue.main.async {
             guard let self else { return }; self.busy = false; self.operationMessage = ""
             if case .failure(let error) = result { self.alert(error.localizedDescription) }
-            self.refreshStatus(); self.updateControls()
+            self.refreshStatus(force: true); self.updateControls(); self.updateStatusAccessibility()
         } }
     }
     func alert(_ message: String) {

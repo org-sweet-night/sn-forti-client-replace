@@ -35,7 +35,7 @@ def main():
     git_hash = git_hash[:8]
     dirty = subprocess.check_output(
         ["git", "-C", str(here), "status", "--porcelain", "--",
-         "App.swift", "brand.json", "build.sh", "version.py", "VPNHelperProtocol.swift",
+         "App.swift", "StatusMonitor.swift", "EnergyTests.swift", "brand.json", "build.sh", "version.py", "VPNHelperProtocol.swift",
          "VPNHelper.swift", "VPNHelperClient.swift", "UpdateCoordinator.swift", "update-config.json",
          "../helpers/updater.swift", "../helpers/updater-entitlements.plist",
          "../scripts/branding.py", "../scripts/prepare-sparkle.sh", "../scripts/configure-updates.py"], text=True

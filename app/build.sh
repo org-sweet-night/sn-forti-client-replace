@@ -55,7 +55,7 @@ digest = re.search(r'^CDHash=([0-9a-f]{40})$', result.stderr, re.M)
 assert digest
 Path(sys.argv[2]).write_text('identifier "' + sys.argv[3] + '" and cdhash H"' + digest[1] + '"')
 PY
-swiftc -O -target "$SWIFT_TARGET" -framework AppKit -framework Foundation -framework ServiceManagement "$BRAND_SWIFT" "$HERE/VPNHelperProtocol.swift" "$HERE/VPNHelperClient.swift" "$HERE/UpdateCoordinator.swift" "$VERSION_SWIFT" "$HERE/App.swift" -o "$CONTENTS/MacOS/$APP_NAME"
+swiftc -O -target "$SWIFT_TARGET" -framework AppKit -framework Foundation -framework ServiceManagement -framework SystemConfiguration "$BRAND_SWIFT" "$HERE/VPNHelperProtocol.swift" "$HERE/VPNHelperClient.swift" "$HERE/UpdateCoordinator.swift" "$HERE/StatusMonitor.swift" "$HERE/EnergyTests.swift" "$VERSION_SWIFT" "$HERE/App.swift" -o "$CONTENTS/MacOS/$APP_NAME"
 /usr/bin/python3 - "$ROOT" "$CONTENTS/Info.plist" "$VERSION_SWIFT" <<'PYPLIST'
 import plistlib, re, sys
 from pathlib import Path
