@@ -33,6 +33,9 @@ class UpdateWrapperTests(unittest.TestCase):
                     script = Path(directory) / 'scripts' / 'update.sh'
                     script.parent.mkdir()
                     shutil.copyfile(self.script, script)
+                    shutil.copyfile(self.script.with_name("branding.py"), script.with_name("branding.py"))
+                    (script.parent.parent / "app").mkdir()
+                    shutil.copyfile(self.script.parent.parent / "app/brand.json", script.parent.parent / "app/brand.json")
                     result = subprocess.run(['bash', str(script), mode], capture_output=True,
                         env=dict(os.environ, SNVPN_REAUTHORIZE_CREDENTIALS=reauthorize,
                                  SNVPN_RESTORE_CONNECTION=restore), timeout=5)

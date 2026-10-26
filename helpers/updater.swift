@@ -49,7 +49,7 @@ final class ConsentedUserDriver: SPUStandardUserDriver {
         } else {
             let received = ByteCountFormatter.string(fromByteCount: Int64(clamping: receivedBytes), countStyle: .file)
             let expected = ByteCountFormatter.string(fromByteCount: Int64(clamping: expectedBytes), countStyle: .file)
-            alert.informativeText = expectedBytes > 0 ? "已下载 \(received)，共 \(expected)。完成后将安装并重新打开 SN VPN。" : "已下载 \(received)。完成后将安装并重新打开 SN VPN。"
+            alert.informativeText = expectedBytes > 0 ? "已下载 \(received)，共 \(expected)。完成后将安装并重新打开 \(Brand.displayName)。" : "已下载 \(received)。完成后将安装并重新打开 \(Brand.displayName)。"
             alert.addButton(withTitle: "继续后台下载")
             alert.addButton(withTitle: "取消更新")
         }
@@ -90,9 +90,9 @@ final class UpdaterApp: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // The sidecar is nested at Main.app/Contents/Helpers/Updater.app.
         let hostURL = Bundle.main.bundleURL.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        guard hostURL.path == "/Applications/SN VPN.app",
-              Bundle.main.bundleURL.path == "/Applications/SN VPN.app/Contents/Helpers/SN VPN Updater.app",
-              let host = Bundle(url: hostURL), host.bundleIdentifier == "local.snvpn.desktop",
+        guard hostURL.path == Brand.installPath,
+              Bundle.main.bundleURL.path == Brand.installPath + "/Contents/Helpers/\(Brand.updaterName).app",
+              let host = Bundle(url: hostURL), host.bundleIdentifier == Brand.bundleID,
               UpdateConfiguration.isValid(host.infoDictionary ?? [:]),
               host.object(forInfoDictionaryKey: "SUAutomaticallyUpdate") as? Bool == false,
               host.object(forInfoDictionaryKey: "SUAllowsAutomaticUpdates") as? Bool == false,
@@ -125,14 +125,14 @@ final class UpdaterApp: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         driver?.recordChoice(.dismiss, interruptionConsented: false, packageAllowed: false)
         guard updateItem.installationType == "package",
               UpdateConfiguration.isValidPackage(updateItem.fileURL, feed: configuredFeed) else {
-            throw NSError(domain: "local.snvpn.updater", code: 1,
+            throw NSError(domain: Brand.updaterID, code: 1,
                           userInfo: [NSLocalizedDescriptionKey: "更新必须是同一 GitHub 仓库通过 HTTPS 发布的完整 .pkg 安装包；已拒绝此更新。"])
         }
         guard consentedVersion != updateItem.versionString else { return }
         // This delegate runs before Sparkle offers or downloads the selected payload.
         NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
-        alert.messageText = "发现 SN VPN 更新"
+        alert.messageText = "发现 \(Brand.displayName) 更新"
         alert.informativeText = "接下来可查看版本说明，再决定是否下载。安装将更新 App、VPN 辅助服务和运行组件，需要管理员授权，并会暂时断开 VPN。继续表示允许安装时暂时断开；下载前仍可取消。"
         alert.addButton(withTitle: "查看版本说明")
         alert.addButton(withTitle: "暂不更新")

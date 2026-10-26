@@ -3,6 +3,8 @@
 set -euo pipefail
 umask 022
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+BRAND_SHELL="$(/usr/bin/python3 "$ROOT/scripts/branding.py" --shell)"
+eval "$BRAND_SHELL"
 [[ "$(uname -s)/$(uname -m)" == Darwin/arm64 ]] || { echo "arm64 macOS is required" >&2; exit 1; }
 SDK="$(xcrun --show-sdk-path)"
 mkdir -p "$ROOT/tmp" "$ROOT/dist"
@@ -29,10 +31,10 @@ export LDFLAGS="-arch arm64 -mmacosx-version-min=11.0 -isysroot $SDK -Wl,-header
 export PKG_CONFIG_LIBDIR="$WORK/prefix/lib/pkgconfig"
 export PKG_CONFIG_PATH=""
 cd "$WORK/openssl-3.5.8"
-./Configure darwin64-arm64-cc shared no-tests no-module --prefix=/usr/local/sn-vpn-runtime --libdir=lib --openssldir=/etc/ssl
+./Configure darwin64-arm64-cc shared no-tests no-module --prefix=/usr/local/${BRAND_IDENTIFIER}-vpn-runtime --libdir=lib --openssldir=/etc/ssl
 make -j "$(sysctl -n hw.ncpu)"
 make install_sw DESTDIR="$WORK/install"
-cp -R "$WORK/install/usr/local/sn-vpn-runtime/." "$WORK/prefix/"
+cp -R "$WORK/install/usr/local/${BRAND_IDENTIFIER}-vpn-runtime/." "$WORK/prefix/"
 export DYLD_LIBRARY_PATH="$WORK/prefix/lib"
 cd "$WORK/openconnect-9.21"
 OPENSSL_CFLAGS="-I$WORK/prefix/include" OPENSSL_LIBS="-L$WORK/prefix/lib -lssl -lcrypto" \

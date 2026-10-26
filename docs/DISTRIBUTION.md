@@ -1,4 +1,6 @@
-# SN VPN 下载包
+# FortiReplace 下载包
+
+应用品牌和标识来自构建时的 `app/brand.json`。本文路径使用仓库配置对应的 `SN VPN`；界面显示名称为 `SweetNight VPN`。
 
 适用于 **macOS 15 或以上、Apple Silicon（M1/M2/M3/M4 及后续芯片）**。Intel Mac 不支持。
 
@@ -7,7 +9,7 @@
 1. 从本项目 GitHub Releases 下载 ZIP 和 `.sha256`，在下载目录执行 `shasum -a 256 -c SN-VPN-*.zip.sha256` 核对文件。
 2. 解压 ZIP，保留整个文件夹。首次使用需要 Apple Command Line Tools 提供的 `/usr/bin/python3`。若尚未安装，在终端执行 `xcode-select --install`，完成后再继续。不需要 Homebrew、FortiClient 或自行编译。
 3. 双击 `Install.command`，按提示输入 Mac 管理员密码。也可以在终端进入解压目录后执行 `bash scripts/install.sh`。
-4. 打开 SN VPN，手动创建连接或导入本机 FortiClient 的连接信息。首次连接时核对网关证书并输入 VPN 密码。安装本身不会连接 VPN。
+4. 打开 FortiReplace，手动创建连接或导入本机 FortiClient 的连接信息。首次连接时核对网关证书并输入 VPN 密码。安装本身不会连接 VPN。
 
 本包使用 ad-hoc 临时签名，**没有 Apple Developer ID 签名或公证**。首次运行安装入口或 App 时，macOS 可能阻止打开。确认下载来源与校验值后，按 [Apple 官方说明](https://support.apple.com/102445) 在“系统设置 → 隐私与安全性”中找到刚才被阻止的项目，选择“仍要打开”。管理员管理的电脑可能不允许此操作，请联系 IT。无需全局关闭 Gatekeeper、SIP 或其他系统保护。
 
@@ -17,7 +19,7 @@
 
 带自动更新功能的版本会在正常启动时检查 GitHub Release，也可从菜单选择“检查更新…”。看到新版说明后选择安装，才开始后台下载；安装需要管理员授权，可能短暂断开并恢复 VPN。下载或签名失败不会改动当前安装。旧版没有此入口时仍按下方手动升级。
 
-先主动断开 VPN 并退出 SN VPN，再双击 `Update.command`。升级会保留连接设置、密码和启动偏好，并检查已有凭据是否仍可读取；失败时回滚。不要只拖动替换 App，也不要对已有安装运行 Install。
+先主动断开 VPN 并退出 FortiReplace，再双击 `Update.command`。升级会保留连接设置、密码和启动偏好，并检查已有凭据是否仍可读取；失败时回滚。不要只拖动替换 App，也不要对已有安装运行 Install。
 
 升级完成后，在解压目录运行 `bash scripts/update.sh --check` 核验。若临时签名导致旧钥匙串授权不兼容，升级会失败并回滚；重新授权需要用户明确同意。中断的升级使用 `bash scripts/update.sh --recover`，保留恢复资料直到恢复成功。
 

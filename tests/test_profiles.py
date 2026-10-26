@@ -24,7 +24,7 @@ def connection(server='vpn.example.test'):
 
 
 def saved(identity='primary', server='vpn.example.test'):
-    return {'profile': 'SN-IDC', 'connection': connection(server), 'servercert': PIN,
+    return {'profile': 'Office VPN', 'connection': connection(server), 'servercert': PIN,
             'profile_id': identity, 'credential_account': c.account_for(identity)}
 
 
@@ -93,7 +93,7 @@ class Profiles(unittest.TestCase):
             self.fail('unexpected service command')
 
     def payload(self, identity='primary', **changes):
-        value = {'id': identity, 'name': 'SN-IDC', 'server': 'vpn.example.test', 'port': 443, 'username': 'person'}
+        value = {'id': identity, 'name': 'Office VPN', 'server': 'vpn.example.test', 'port': 443, 'username': 'person'}
         value.update(changes)
         path = self.base / 'input.json'
         path.write_text(json.dumps(value))
@@ -115,8 +115,8 @@ class Profiles(unittest.TestCase):
 
     def test_changed_host_authenticates_before_reading_old_secret(self):
         c.connect_profile(self.payload(server='new.example.test'))
-        self.prepare.assert_called_once_with('SN-IDC', connection('new.example.test'))
-        self.assertEqual(self.events[0], ('auth', 'SN-IDC'))
+        self.prepare.assert_called_once_with('Office VPN', connection('new.example.test'))
+        self.assertEqual(self.events[0], ('auth', 'Office VPN'))
         self.assertEqual(self.secrets[None], b'fresh-secret')
 
     def test_cached_profile_isolation_and_reauth(self):

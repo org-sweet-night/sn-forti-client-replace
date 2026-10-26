@@ -8,7 +8,7 @@ private struct HelperPolicy: Decodable {
 
     var valid: Bool {
         version == 1 && userID > 0 && userID < UInt32.max &&
-        clientRequirement.range(of: #"\Aidentifier "local\.snvpn\.desktop" and cdhash H"[0-9a-fA-F]{40}"\z"#,
+        clientRequirement.range(of: #"\Aidentifier ""# + NSRegularExpression.escapedPattern(for: Brand.bundleID) + #"" and cdhash H"[0-9a-fA-F]{40}"\z"#,
                                 options: .regularExpression) != nil
     }
 }
@@ -35,7 +35,7 @@ private final class HelperOutput: @unchecked Sendable {
 
 private final class Helper: NSObject, NSXPCListenerDelegate, VPNHelperProtocol {
     private let policy: HelperPolicy
-    private let queue = DispatchQueue(label: "local.snvpn.helper.operations")
+    private let queue = DispatchQueue(label: Brand.helperLabel + ".operations")
     private let state = NSLock()
     private var busy = false
     private var lastActivity = Date()
@@ -218,7 +218,7 @@ private enum VPNHelperMain {
             precondition(!VPNHelperContract.validRequest("connect-profile", payload: Data("[]".utf8)))
             precondition(!VPNHelperContract.validRequest("forget-profile", payload: Data(repeating: 32, count: 4097)))
             precondition(!HelperPolicy(version: 1, userID: 0, clientRequirement: "").valid)
-            let requirement = "identifier \"local.snvpn.desktop\" and cdhash H\"" + String(repeating: "a", count: 40) + "\""
+            let requirement = "identifier \"\(Brand.bundleID)\" and cdhash H\"" + String(repeating: "a", count: 40) + "\""
             precondition(HelperPolicy(version: 1, userID: 501, clientRequirement: requirement).valid)
             precondition(!HelperPolicy(version: 1, userID: 501, clientRequirement: requirement + "\n").valid)
             print("VPN helper self-test passed")

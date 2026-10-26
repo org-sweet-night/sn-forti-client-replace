@@ -2,7 +2,7 @@ import Foundation
 
 enum VPNHelperClient {
     static func validRequirement(_ value: String) -> Bool {
-        value.range(of: #"\Aidentifier "local\.snvpn\.helper" and cdhash H"[0-9a-fA-F]{40}"\z"#,
+        value.range(of: #"\Aidentifier ""# + NSRegularExpression.escapedPattern(for: Brand.helperLabel) + #"" and cdhash H"[0-9a-fA-F]{40}"\z"#,
                     options: .regularExpression) != nil
     }
 

@@ -68,7 +68,7 @@ def credential_user_id():
         raise ValueError('credential policy')
     requirement = policy.get('clientRequirement')
     if (not isinstance(requirement, str) or not re.fullmatch(
-            r'identifier "local\.snvpn\.desktop" and cdhash H"[0-9A-Fa-f]{40}"',
+            r'identifier "local\.[a-z][a-z0-9]{0,23}vpn\.desktop" and cdhash H"[0-9A-Fa-f]{40}"',
             requirement)):
         raise ValueError('credential policy')
     return uid

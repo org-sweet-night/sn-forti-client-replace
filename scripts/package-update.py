@@ -11,7 +11,12 @@ import shutil
 import stat
 import subprocess
 import tempfile
+import sys
 import zipfile
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import branding
+from branding import BRAND
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -52,8 +57,8 @@ def validate_zip(archive):
         roots = {name.split('/', 1)[0] for name in seen}
         if len(roots) != 1:
             raise RuntimeError('unexpected release archive layout')
-        framework = (next(iter(roots)) + '/dist/SN VPN.app/Contents/Helpers/'
-                     'SN VPN Updater.app/Contents/Frameworks/Sparkle.framework')
+        framework = (next(iter(roots)) + '/dist/' + BRAND.app_name + '.app/Contents/Helpers/'
+                     + BRAND.updater_name + '.app/Contents/Frameworks/Sparkle.framework')
 
         def inside(path):
             return path == framework or path.startswith(framework + '/')
@@ -92,14 +97,14 @@ def validate_zip(archive):
 def postinstall_script():
     return (
         '#!/bin/sh\nset -eu\n'
-        'case "${2:-}" in ""|/) ;; *) echo "SN VPN update requires the root install location" >&2; exit 1 ;; esac\n'
-        'case "${3:-}" in /) ;; *) echo "SN VPN update requires the startup volume" >&2; exit 1 ;; esac\n'
+        'case "${2:-}" in ""|/) ;; *) echo "Managed VPN update requires the root install location" >&2; exit 1 ;; esac\n'
+        'case "${3:-}" in /) ;; *) echo "Managed VPN update requires the startup volume" >&2; exit 1 ;; esac\n'
         'SCRIPT_DIR=$(dirname "$0")\n'
         'case "$SCRIPT_DIR" in /tmp) SCRIPT_DIR=/private/tmp ;; /tmp/*) SCRIPT_DIR="/private/tmp/${SCRIPT_DIR#/tmp/}" ;; esac\n'
         '/usr/bin/python3 -IB - "$SCRIPT_DIR" <<\'PY\'\n'
         'import os, stat, sys\nfrom pathlib import Path\n'
         'base = Path(os.path.abspath(sys.argv[1]))\nseen = set()\n'
-        'for name in ("sparkle-install.py", "package-update.py", "release.zip"):\n'
+        'for name in ("scripts/sparkle-install.py", "scripts/package-update.py", "scripts/branding.py", "app/brand.json", "release.zip"):\n'
         '    path = base / name\n'
         '    for item in (path, *path.parents):\n'
         '        if item in seen: continue\n'
@@ -108,13 +113,13 @@ def postinstall_script():
         '            raise SystemExit("Unsafe package source")\n'
         '    if not stat.S_ISREG(path.lstat().st_mode): raise SystemExit("Unsafe package source")\n'
         'PY\n'
-        'exec /usr/bin/python3 -IB "$SCRIPT_DIR/sparkle-install.py" --payload "$SCRIPT_DIR/release.zip"\n')
+        'exec /usr/bin/python3 -IB "$SCRIPT_DIR/scripts/sparkle-install.py" --payload "$SCRIPT_DIR/release.zip"\n')
 
 
 def package(archive, tag, output):
     if output.exists() or output.is_symlink():
         raise RuntimeError('package output already exists')
-    with tempfile.TemporaryDirectory(prefix='snvpn-pkg-') as temporary:
+    with tempfile.TemporaryDirectory(prefix=BRAND.temporary_prefix + '-pkg-') as temporary:
         stage = Path(temporary)
         staged_archive = stage / 'release.zip'
         shutil.copy2(archive, staged_archive)
@@ -136,22 +141,27 @@ def package(archive, tag, output):
         if (manifest.get('minimum_macos') != '15.0' or manifest.get('architecture') != 'arm64'
                 or not isinstance(manifest.get('build'), str) or not manifest['build'].isdecimal()):
             raise RuntimeError('release manifest is not a supported Sparkle update')
-        info = plistlib.loads((release / 'dist/SN VPN.app/Contents/Info.plist').read_bytes())
+        info = plistlib.loads((release / ('dist/' + BRAND.app_name + '.app/Contents/Info.plist')).read_bytes())
         bundle_version = manifest.get('bundle_version', manifest['build'])
         if (info.get('CFBundleShortVersionString') != version
                 or info.get('CFBundleVersion') != bundle_version
-                or ('bundle_version' in manifest and info.get('SNVPNBuildNumber') != manifest['build'])):
+                or ('bundle_version' in manifest and info.get(BRAND.build_key) != manifest['build'])):
             raise RuntimeError('release manifest does not match app version and build')
         scripts = stage / 'scripts'
         scripts.mkdir()
-        shutil.copy2(ROOT / 'scripts/sparkle-install.py', scripts / 'sparkle-install.py')
-        shutil.copy2(ROOT / 'scripts/package-update.py', scripts / 'package-update.py')
+        (scripts / 'scripts').mkdir()
+        (scripts / 'app').mkdir()
+        shutil.copy2(ROOT / 'scripts/branding.py', scripts / 'scripts/branding.py')
+        shutil.copy2(release / 'app/brand.json', scripts / 'app/brand.json')
+        branding.check_built(release / 'dist' / (BRAND.app_name + '.app'))
+        shutil.copy2(ROOT / 'scripts/sparkle-install.py', scripts / 'scripts/sparkle-install.py')
+        shutil.copy2(ROOT / 'scripts/package-update.py', scripts / 'scripts/package-update.py')
         shutil.copy2(staged_archive, scripts / 'release.zip')
         (scripts / 'postinstall').write_text(postinstall_script())
         (scripts / 'postinstall').chmod(0o755)
         output.parent.mkdir(parents=True, exist_ok=True)
         subprocess.run(['/usr/bin/pkgbuild', '--nopayload', '--scripts', str(scripts),
-                        '--identifier', 'local.snvpn.managed-update', '--version', bundle_version,
+                        '--identifier', BRAND.package_id, '--version', bundle_version,
                         '--install-location', '/', str(output)], check=True)
         return manifest
 

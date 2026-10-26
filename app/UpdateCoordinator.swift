@@ -28,11 +28,11 @@ enum UpdateConfiguration {
         let key = Data(repeating: 1, count: 32).base64EncodedString()
         let valid: [String: Any] = ["SUFeedURL": "https://github.com/example/vpn/releases/download/updates/appcast.xml", "SUPublicEDKey": key]
         precondition(isValid(valid))
-        var latest = valid; latest["SUFeedURL"] = "https://github.com/org-sweet-night/sn-forti-client-replace/releases/latest/download/appcast.xml"
+        var latest = valid; latest["SUFeedURL"] = "https://github.com/example/vpn/releases/latest/download/appcast.xml"
         precondition(isValid(latest))
         let feed = latest["SUFeedURL"] as? String
-        precondition(isValidPackage(URL(string: "https://github.com/org-sweet-night/sn-forti-client-replace/releases/download/v1/SN-VPN.pkg"), feed: feed))
-        for asset in ["https://github.com/other/sn-forti-client-replace/releases/download/v1/SN-VPN.pkg", "https://github.com/org-sweet-night/sn-forti-client-replace/releases/download/v1/SN-VPN.zip", "https://evil.test/org-sweet-night/sn-forti-client-replace/releases/download/v1/SN-VPN.pkg", "https://github.com/org-sweet-night/sn-forti-client-replace/releases/download/v1/SN-VPN.pkg?token=secret"] {
+        precondition(isValidPackage(URL(string: "https://github.com/example/vpn/releases/download/v1/VPN.pkg"), feed: feed))
+        for asset in ["https://github.com/other/vpn/releases/download/v1/VPN.pkg", "https://github.com/example/vpn/releases/download/v1/VPN.zip", "https://evil.test/example/vpn/releases/download/v1/VPN.pkg", "https://github.com/example/vpn/releases/download/v1/VPN.pkg?token=secret"] {
             precondition(!isValidPackage(URL(string: asset), feed: feed))
         }
         for feed in ["http://github.com/example/vpn/releases/download/updates/appcast.xml", "https://github.com.evil.test/example/vpn/releases/download/updates/appcast.xml", "https://user@github.com/example/vpn/releases/download/updates/appcast.xml", "https://github.com/example/vpn/releases/download/updates/appcast.xml?token=secret"] {
@@ -50,8 +50,8 @@ final class UpdateCoordinator {
     private var pendingManual = false
 
     func check(manually: Bool) {
-        guard Bundle.main.bundleURL.path == "/Applications/SN VPN.app" else {
-            if manually { showError("请从“应用程序”中的 SN VPN 检查更新。开发构建不执行安装更新。") }
+        guard Bundle.main.bundleURL.path == Brand.installPath else {
+            if manually { showError("请从“应用程序”中的 \(Brand.displayName) 检查更新。开发构建不执行安装更新。") }
             return
         }
         guard UpdateConfiguration.isValid(Bundle.main.infoDictionary ?? [:]) else {
@@ -59,7 +59,7 @@ final class UpdateCoordinator {
             return
         }
         guard !opening else { pendingManual = pendingManual || manually; return }
-        let url = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/SN VPN Updater.app")
+        let url = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/\(Brand.updaterName).app")
         if !manually, NSWorkspace.shared.runningApplications.contains(where: { $0.bundleURL == url }) { return }
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = manually

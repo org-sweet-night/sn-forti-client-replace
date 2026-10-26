@@ -9,6 +9,11 @@ from pathlib import Path
 import stat
 import subprocess
 import tempfile
+import sys
+from urllib.parse import urlsplit
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from branding import BRAND
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = ROOT / 'app/update-config.json'
@@ -29,7 +34,10 @@ def backup(tool, account, config, key):
     if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or directory.is_symlink():
         raise ValueError('unsafe signing backup directory')
     directory.chmod(0o700)
-    target = directory / 'sn-forti-client-replace-update-ed25519.key'
+    repository_name = urlsplit(config['feed_url']).path.split('/')[2]
+    if not repository_name or any(c not in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-' for c in repository_name):
+        raise ValueError('invalid update repository')
+    target = directory / (repository_name + '-update-ed25519.key')
     with tempfile.TemporaryDirectory(prefix='.export-', dir=directory) as temporary:
         exported = Path(temporary) / 'private-key'
         subprocess.run([str(tool), '--account', account, '-x', str(exported)], check=True,
@@ -59,8 +67,8 @@ def backup(tool, account, config, key):
 def setup(create):
     config = json.loads(CONFIG.read_text())
     tool = ROOT / 'dist/sparkle/bin/generate_keys'
-    account = 'local.snvpn.release-signing'
-    if config.get('keychain_account') != account:
+    account = BRAND.signing_account
+    if 'keychain_account' in config and config['keychain_account'] != account:
         raise ValueError('unexpected signing account')
     command = [str(tool), '--account', account]
     existing = subprocess.run([*command, '-p'], capture_output=True, text=True)

@@ -4,16 +4,34 @@ import base64
 import json
 from pathlib import Path
 import plistlib
+import re
 import sys
+from urllib.parse import urlsplit
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from branding import BRAND
 
 ROOT = Path(__file__).resolve().parents[1]
-FEED = 'https://github.com/org-sweet-night/sn-forti-client-replace/releases/latest/download/appcast.xml'
+FEED = json.loads((ROOT / 'app/update-config.json').read_text())['feed_url']
+
+
+def repository(feed):
+    url = urlsplit(feed)
+    match = re.fullmatch(r'/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)/releases/(?:latest/download|download/[A-Za-z0-9_.-]+)/appcast\.xml', url.path)
+    if (url.scheme != 'https' or url.hostname != 'github.com' or url.username or url.password
+            or url.port or url.query or url.fragment or not match):
+        raise ValueError('invalid update source')
+    return match[1] + '/' + match[2]
 
 
 def configuration(path):
     value = json.loads(Path(path).read_text())
-    if value.get('feed_url') != FEED or value.get('keychain_account') != 'local.snvpn.release-signing':
-        raise ValueError('unexpected update source or signing account')
+    if value.get('feed_url') != FEED:
+        raise ValueError('unexpected update source')
+    repository(value['feed_url'])
+    if 'keychain_account' in value and value['keychain_account'] != BRAND.signing_account:
+        raise ValueError('unexpected signing account')
+    value['keychain_account'] = BRAND.signing_account
     key = value.get('public_key')
     if key:
         raw = base64.b64decode(key, validate=True)
@@ -33,7 +51,7 @@ def configure(plist_path, config_path, test=False):
                 SUEnableSystemProfiling=False, SUVerifyUpdateBeforeExtraction=True, SURequireSignedFeed=True,
                 SUSignedFeedFailureExpirationInterval=0)
     if test:
-        info['SNVPNUpdateTestConfiguration'] = True
+        info[BRAND.test_key] = True
     path.write_bytes(plistlib.dumps(info))
     if not config['public_key']:
         print('Update signing public key is not configured; this local build cannot check or install updates.')

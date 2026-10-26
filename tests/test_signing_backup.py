@@ -16,14 +16,14 @@ class SigningBackupTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             home = Path(temporary)
             directory = home / '.ssh/github.release-key'
-            config = {'backup_directory': str(directory)}
+            config = {'backup_directory': str(directory), 'feed_url': 'https://github.com/example/vpn/releases/latest/download/appcast.xml'}
             def export(arguments, **kwargs):
                 self.assertEqual(arguments[-2], '-x')
                 Path(arguments[-1]).write_bytes(b'fixture signing backup')
             with patch.object(setup.Path, 'home', return_value=home), patch.object(setup.subprocess, 'run', side_effect=export):
                 setup.backup(Path('/tool'), 'account', config, 'public')
                 setup.backup(Path('/tool'), 'account', config, 'public')
-                private = directory / 'sn-forti-client-replace-update-ed25519.key'
+                private = directory / 'vpn-update-ed25519.key'
                 self.assertEqual(stat.S_IMODE(directory.stat().st_mode), 0o700)
                 self.assertEqual(stat.S_IMODE(private.stat().st_mode), 0o600)
                 self.assertEqual(stat.S_IMODE(private.with_suffix('.pub').stat().st_mode), 0o600)

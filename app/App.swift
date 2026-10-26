@@ -68,7 +68,7 @@ enum AppError: LocalizedError {
 }
 
 enum ProfileStorage {
-    static let directory = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/SN VPN")
+    static let directory = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/\(Brand.appName)")
     static let url = directory.appendingPathComponent("profiles.json")
     static let legacyURL = directory.appendingPathComponent("profile.json")
 
@@ -225,20 +225,21 @@ final class DotView: NSView {
     var color: NSColor = .secondaryLabelColor { didSet { needsDisplay = true } }
     override func draw(_ dirtyRect: NSRect) { color.setFill(); NSBezierPath(ovalIn: bounds.insetBy(dx: 2, dy: 2)).fill() }
 }
-final class SheetBackgroundView: NSView {
+final class SemanticBackgroundView: NSView {
     override var isOpaque: Bool { true }
-    override func draw(_ dirtyRect: NSRect) { NSColor.white.setFill(); bounds.fill() }
+    override func draw(_ dirtyRect: NSRect) { NSColor.windowBackgroundColor.setFill(); bounds.fill() }
+    override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); needsDisplay = true }
 }
 
 final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextFieldDelegate {
-    static let navy = NSColor(srgbRed: 31 / 255.0, green: 44 / 255.0, blue: 61 / 255.0, alpha: 1)
-    static let blue = NSColor(srgbRed: 36 / 255.0, green: 115 / 255.0, blue: 200 / 255.0, alpha: 1)
-    static let canvas = NSColor(srgbRed: 245 / 255.0, green: 247 / 255.0, blue: 250 / 255.0, alpha: 1)
     static let gold = NSColor(srgbRed: 212 / 255.0, green: 175 / 255.0, blue: 55 / 255.0, alpha: 1)
+    static func previewAppearance(named name: String) -> NSAppearance? {
+        switch name { case "dark": return NSAppearance(named: .darkAqua); case "light": return NSAppearance(named: .aqua); default: return nil }
+    }
 
     var window: NSWindow!, statusItem: NSStatusItem!, timer: Timer?
     var store = ProfileStore(), storeError: Error?, lastStatus: StatusReply?
-    var busy = false, preview = false, testMode = false, operationMessage = "", renderScenario: String?
+    var busy = false, preview = false, testMode = false, operationMessage = "", renderScenario: String?, previewAppearance: NSAppearance?
     var autoConnectOnOpen = false, launchConnectionPending = false
     static let autoConnectKey = "autoConnectOnOpen"
     var connectMenuItem: NSMenuItem?, disconnectMenuItem: NSMenuItem?
@@ -281,7 +282,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextFieldD
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.appearance = NSAppearance(named: .aqua)
+        NSApp.appearance = nil
         if CommandLine.arguments.contains("--self-test") { UpdateConfiguration.selfTest(); Self.selfTest(); NSApp.terminate(nil); return }
         if CommandLine.arguments.contains("--helper-check") {
             Service.action("ping", payload: nil) { result in
@@ -305,6 +306,9 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextFieldD
             catch { store = ProfileStore(); storeError = error }
             autoConnectOnOpen = UserDefaults.standard.bool(forKey: Self.autoConnectKey)
             launchConnectionPending = autoConnectOnOpen && !store.profiles.isEmpty && storeError == nil
+        }
+        if preview, let i = args.firstIndex(of: "--preview-appearance"), i + 1 < args.count {
+            previewAppearance = Self.previewAppearance(named: args[i + 1])
         }
         buildWindow(); installMenu(); refreshList(); updateDetails(); showWindow()
         if !preview { refreshStatus() }
@@ -351,7 +355,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextFieldD
 
     func buildWindow() {
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 820, height: 550), styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
-        window.title = "SN VPN"; window.center(); window.delegate = self
+        window.title = Brand.displayName; window.center(); window.delegate = self; window.appearance = preview ? previewAppearance : nil
         let root = NSStackView(); root.orientation = .horizontal; root.spacing = 0; root.alignment = .top; root.translatesAutoresizingMaskIntoConstraints = false
         let sidebar = makeSidebar(), detail = makeDetailPanel()
         root.addArrangedSubview(sidebar); root.addArrangedSubview(detail)
@@ -361,27 +365,23 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextFieldD
         window.contentView?.addSubview(root)
         NSLayoutConstraint.activate([root.leadingAnchor.constraint(equalTo: window.contentView!.leadingAnchor), root.trailingAnchor.constraint(equalTo: window.contentView!.trailingAnchor), root.topAnchor.constraint(equalTo: window.contentView!.topAnchor), root.bottomAnchor.constraint(equalTo: window.contentView!.bottomAnchor)])
     }
-    func colored(_ view: NSView, _ color: NSColor) { view.wantsLayer = true; view.layer?.backgroundColor = color.cgColor }
     func stack(_ views: [NSView], spacing: CGFloat, padding: NSEdgeInsets = NSEdgeInsetsZero) -> NSStackView {
         let value = NSStackView(views: views); value.orientation = .vertical; value.alignment = .leading; value.spacing = spacing; value.edgeInsets = padding; value.translatesAutoresizingMaskIntoConstraints = false; return value
     }
     func makeSidebar() -> NSView {
-        let panel = NSView(); colored(panel, Self.navy)
-        let brand = NSTextField(labelWithString: "SN VPN"); brand.font = .systemFont(ofSize: 20, weight: .bold); brand.textColor = .white
-        let nav = NSTextField(labelWithString: "远程访问"); nav.textColor = NSColor(calibratedWhite: 0.78, alpha: 1); nav.font = .systemFont(ofSize: 12, weight: .semibold)
+        let panel = NSVisualEffectView(); panel.material = .sidebar; panel.blendingMode = .behindWindow; panel.state = .followsWindowActiveState
+        let brand = NSTextField(labelWithString: Brand.displayName); brand.font = .systemFont(ofSize: 20, weight: .bold); brand.textColor = .labelColor
+        let nav = NSTextField(labelWithString: "远程访问"); nav.textColor = .secondaryLabelColor; nav.font = .systemFont(ofSize: 12, weight: .semibold)
         listStack.orientation = .vertical; listStack.alignment = .leading; listStack.spacing = 7; listStack.translatesAutoresizingMaskIntoConstraints = false
-        createButton.target = self; createButton.action = #selector(newProfile); createButton.isBordered = false; createButton.alignment = .left
-        createButton.contentTintColor = .white; createButton.font = .systemFont(ofSize: 13, weight: .medium)
+        createButton.target = self; createButton.action = #selector(newProfile); createButton.bezelStyle = .rounded; createButton.alignment = .left
+        createButton.font = .systemFont(ofSize: 13, weight: .medium)
         let column = stack([brand, nav, listStack, NSView(), createButton], spacing: 22)
         panel.addSubview(column)
         NSLayoutConstraint.activate([column.leadingAnchor.constraint(equalTo: panel.leadingAnchor, constant: 16), column.trailingAnchor.constraint(equalTo: panel.trailingAnchor, constant: -16), column.topAnchor.constraint(equalTo: panel.topAnchor, constant: 28), column.bottomAnchor.constraint(equalTo: panel.bottomAnchor, constant: -20), nav.widthAnchor.constraint(equalTo: column.widthAnchor), listStack.widthAnchor.constraint(equalTo: column.widthAnchor), createButton.widthAnchor.constraint(equalTo: column.widthAnchor)])
         return panel
     }
-    func makeListPanel() -> NSView {
-        let panel = NSView(); colored(panel, Self.canvas); return panel
-    }
     func makeDetailPanel() -> NSView {
-        let panel = NSView(); colored(panel, NSColor(calibratedWhite: 1, alpha: 1))
+        let panel = SemanticBackgroundView()
         connectionTitle.font = .systemFont(ofSize: 22, weight: .semibold)
         let subtitle = NSTextField(labelWithString: "Fortinet SSL VPN"); subtitle.font = .systemFont(ofSize: 12); subtitle.textColor = .secondaryLabelColor
         let titleGroup = stack([connectionTitle, subtitle], spacing: 4)
@@ -394,10 +394,8 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextFieldD
         detailRows.identifier = NSUserInterfaceItemIdentifier("profileDetails")
         let details: NSView = detailRows
         let buttonColumn = stack([connectButton, reauthButton], spacing: 10)
-        connectButton.target = self; connectButton.action = #selector(primaryAction); connectButton.isBordered = false; connectButton.font = .systemFont(ofSize: 15, weight: .semibold)
-        connectButton.attributedTitle = NSAttributedString(string: "连接", attributes: [.foregroundColor: NSColor.white, .font: NSFont.systemFont(ofSize: 15, weight: .semibold)])
-        connectButton.wantsLayer = true; connectButton.layer?.backgroundColor = Self.blue.cgColor; connectButton.layer?.cornerRadius = 7
-        reauthButton.target = self; reauthButton.action = #selector(updateLogin); reauthButton.isBordered = false; reauthButton.contentTintColor = Self.blue
+        connectButton.target = self; connectButton.action = #selector(primaryAction); connectButton.bezelStyle = .rounded; connectButton.font = .systemFont(ofSize: 15, weight: .semibold)
+        reauthButton.target = self; reauthButton.action = #selector(updateLogin); reauthButton.bezelStyle = .rounded
         detailMessage.textColor = .secondaryLabelColor; detailMessage.maximumNumberOfLines = 2
         let spacer = NSView(); spacer.setContentHuggingPriority(.defaultLow, for: .vertical)
         launchAtLoginButton.target = self; launchAtLoginButton.action = #selector(toggleLaunchAtLogin)
@@ -428,15 +426,14 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextFieldD
         for row in listStack.arrangedSubviews { listStack.removeArrangedSubview(row); row.removeFromSuperview() }
         for (index, profile) in store.profiles.enumerated() {
             let selected = profile.id == store.selectedId
-            let title = NSMutableAttributedString(string: "   \(profile.name)", attributes: [.font: NSFont.systemFont(ofSize: 14, weight: .medium), .foregroundColor: NSColor.white])
-            title.append(NSAttributedString(string: "\n   SSL VPN", attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor(calibratedWhite: 0.9, alpha: 1)]))
-            let row = NSButton(title: "", target: self, action: #selector(selectProfile(_:))); row.attributedTitle = title; row.alignment = .left; row.isBordered = false; row.tag = index
-            row.wantsLayer = true; row.layer?.cornerRadius = 7; row.layer?.backgroundColor = selected ? Self.blue.cgColor : NSColor.clear.cgColor
-            row.heightAnchor.constraint(equalToConstant: 58).isActive = true; row.widthAnchor.constraint(equalToConstant: 178).isActive = true
+            let row = NSButton(title: profile.name, target: self, action: #selector(selectProfile(_:)))
+            row.font = .systemFont(ofSize: 14, weight: .medium); row.toolTip = profile.name; row.alignment = .left
+            row.bezelStyle = .recessed; row.showsBorderOnlyWhileMouseInside = true; row.setButtonType(.pushOnPushOff); row.state = selected ? .on : .off; row.tag = index
+            row.heightAnchor.constraint(equalToConstant: 32).isActive = true; row.widthAnchor.constraint(equalToConstant: 178).isActive = true
             listStack.addArrangedSubview(row)
         }
         let placeholder = NSTextField(wrappingLabelWithString: storeError == nil ? "暂无连接" : "连接列表无法读取")
-        placeholder.textColor = NSColor(calibratedWhite: 0.76, alpha: 1); placeholder.maximumNumberOfLines = 2
+        placeholder.textColor = .secondaryLabelColor; placeholder.maximumNumberOfLines = 2
         if store.profiles.isEmpty { listStack.addArrangedSubview(placeholder); placeholder.widthAnchor.constraint(equalToConstant: 178).isActive = true }
         updateControls()
     }
@@ -463,7 +460,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextFieldD
         let canMutate = !busy && storeError == nil
         let title = Self.actionTitle(selectedID: selected?.id, status: lastStatus)
         let buttonTitle = busy ? "正在处理 VPN 操作…" : title
-        connectButton.attributedTitle = NSAttributedString(string: buttonTitle, attributes: [.foregroundColor: NSColor.white, .font: NSFont.systemFont(ofSize: 15, weight: .semibold)])
+        connectButton.title = buttonTitle
         connectButton.isEnabled = canMutate && selected != nil && (!title.hasPrefix("断开") || hasActiveConnection)
         reauthButton.isEnabled = canMutate && selected != nil
         editButton.isEnabled = canMutate && selected != nil && !selectedIsActive
@@ -502,19 +499,19 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextFieldD
     }
     func updateStatusAccessibility() {
         let text = busy ? operationMessage : (lastStatus.map { "\($0.title)，\($0.message)" } ?? "正在读取状态")
-        statusItem?.button?.toolTip = "SN VPN：\(text)"
-        statusItem?.button?.setAccessibilityLabel("SN VPN：\(text)")
+        statusItem?.button?.toolTip = "\(Brand.displayName)：\(text)"
+        statusItem?.button?.setAccessibilityLabel("\(Brand.displayName)：\(text)")
         statusItem?.button?.setAccessibilityHelp("当前 VPN 状态：\(text)")
         let isConnected = !busy && lastStatus?.state == .connected && lastStatus?.reachable == true
         let tint = isConnected ? Self.gold : NSColor(calibratedWhite: 0.5, alpha: 1)
-        statusItem?.button?.image = Self.lockIcon(tint, size: NSSize(width: 18, height: 18), description: "SN VPN：\(text)")
+        statusItem?.button?.image = Self.lockIcon(tint, size: NSSize(width: 18, height: 18), description: "\(Brand.displayName)：\(text)")
     }
     func installMenu() {
         let main = NSMenu()
-        let appItem = NSMenuItem(), appMenu = NSMenu(title: "SN VPN")
+        let appItem = NSMenuItem(), appMenu = NSMenu(title: Brand.displayName)
         appMenu.addItem(withTitle: "检查更新…", action: #selector(checkForUpdates), keyEquivalent: "").target = self
         appMenu.addItem(withTitle: "从 FortiClient 导入连接…", action: #selector(importFortiProfiles), keyEquivalent: "").target = self
-        appMenu.addItem(withTitle: "退出 SN VPN", action: #selector(quit), keyEquivalent: "q").target = self
+        appMenu.addItem(withTitle: "退出 \(Brand.displayName)", action: #selector(quit), keyEquivalent: "q").target = self
         appItem.submenu = appMenu; main.addItem(appItem)
         let editItem = NSMenuItem(), editMenu = Self.editMenu()
         editMenu.title = "编辑"
@@ -523,7 +520,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextFieldD
         let menu = NSMenu()
         menu.addItem(withTitle: "检查更新…", action: #selector(checkForUpdates), keyEquivalent: "").target = self
         menu.addItem(withTitle: "从 FortiClient 导入连接…", action: #selector(importFortiProfiles), keyEquivalent: "").target = self
-        menu.addItem(withTitle: "打开 SN VPN", action: #selector(openWindow), keyEquivalent: "o").target = self
+        menu.addItem(withTitle: "打开 \(Brand.displayName)", action: #selector(openWindow), keyEquivalent: "o").target = self
         menu.addItem(NSMenuItem.separator())
         connectMenuItem = menu.addItem(withTitle: "连接当前配置", action: #selector(connectMenuAction), keyEquivalent: ""); connectMenuItem?.target = self
         disconnectMenuItem = menu.addItem(withTitle: "断开当前连接", action: #selector(disconnect), keyEquivalent: ""); disconnectMenuItem?.target = self
@@ -576,7 +573,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextFieldD
         launchConnectionPending = false
         let available = availableProfiles ?? (preview ? [] : ((try? FortiImport.load())?.profiles ?? []))
         let hasImport = !available.isEmpty
-        let welcome = NSAlert(); welcome.messageText = "欢迎使用 SN VPN"
+        let welcome = NSAlert(); welcome.messageText = "欢迎使用 \(Brand.displayName)"
         welcome.informativeText = hasImport
             ? "发现可用的 FortiClient SSL VPN 配置。可导入连接或手动新建；密码不会导入，保存后由你发起连接。"
             : "直接填写服务器、端口和用户名即可新建连接，无需安装 FortiClient。已有 FortiClient 配置时，也可从 App 菜单导入。"
@@ -637,13 +634,13 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextFieldD
         editingID = profile?.id
         let sheet = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 500, height: 430), styleMask: [.titled], backing: .buffered, defer: false)
         sheet.title = profile == nil ? "新增连接" : "编辑连接"
-        sheet.appearance = NSAppearance(named: .aqua); sheet.backgroundColor = .white
-        sheet.contentView = SheetBackgroundView(frame: NSRect(x: 0, y: 0, width: 500, height: 430))
-        editorName = NSTextField(); editorName.placeholderString = "例如：SN IDC"; editorName.stringValue = profile?.name ?? ""
+        sheet.appearance = preview ? previewAppearance : nil; sheet.backgroundColor = .windowBackgroundColor
+        sheet.contentView = SemanticBackgroundView(frame: NSRect(x: 0, y: 0, width: 500, height: 430))
+        editorName = NSTextField(); editorName.placeholderString = "例如：办公网络"; editorName.stringValue = profile?.name ?? ""
         editorServer = NSTextField(); editorServer.placeholderString = "vpn.example.com"; editorServer.stringValue = profile?.server ?? ""
         editorPort = NSTextField(); editorPort.stringValue = String(profile?.port ?? 443)
         editorUser = NSTextField(); editorUser.placeholderString = "用户名"; editorUser.stringValue = profile?.username ?? ""
-        let kind = NSTextField(labelWithString: "Fortinet SSL VPN"); kind.textColor = .darkGray
+        let kind = NSTextField(labelWithString: "Fortinet SSL VPN"); kind.textColor = .labelColor
         let rows = NSGridView(views: [
             [NSTextField(labelWithString: "连接名称"), editorName],
             [NSTextField(labelWithString: "VPN 类型"), kind],
@@ -652,7 +649,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextFieldD
             [NSTextField(labelWithString: "用户名"), editorUser]
         ])
         for row in 0..<rows.numberOfRows {
-            if let field = rows.cell(atColumnIndex: 0, rowIndex: row).contentView as? NSTextField { field.textColor = .darkGray }
+            if let field = rows.cell(atColumnIndex: 0, rowIndex: row).contentView as? NSTextField { field.textColor = .secondaryLabelColor }
         }
         rows.rowSpacing = 16; rows.columnSpacing = 18; rows.xPlacement = .leading; rows.column(at: 0).width = 92; rows.column(at: 1).width = 270
         editorError.textColor = .systemRed; editorError.stringValue = ""
@@ -747,7 +744,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextFieldD
         } }
     }
     func alert(_ message: String) {
-        let alert = NSAlert(); alert.messageText = "SN VPN"; alert.informativeText = message; alert.alertStyle = .warning
+        let alert = NSAlert(); alert.messageText = Brand.displayName; alert.informativeText = message; alert.alertStyle = .warning
         if let window, window.isVisible { alert.beginSheetModal(for: window) } else { showWindow(); alert.beginSheetModal(for: window) }
     }
     @objc func openWindow() { showWindow() }
@@ -762,7 +759,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextFieldD
         }
     }
     static func previewStore() -> ProfileStore {
-        let a = Profile(id: "11111111-1111-4111-8111-111111111111", name: "SN IDC", server: "vpn.example.test", port: 443, username: "demo")
+        let a = Profile(id: "11111111-1111-4111-8111-111111111111", name: "示例连接", server: "vpn.example.test", port: 443, username: "demo")
         let b = Profile(id: "22222222-2222-4222-8222-222222222222", name: "办公网络", server: "remote.example.test", port: 10443, username: "alex")
         let c = Profile(id: "33333333-3333-4333-8333-333333333333", name: "测试环境", server: "qa.example.test", port: 443, username: "qa-user")
         return ProfileStore(selectedId: a.id, profiles: [a, b, c])
@@ -772,6 +769,21 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextFieldD
         return StatusReply(state: .stopped, reachable: false, autostart: false, message: "当前未连接", profileID: nil)
     }
     static func selfTest() {
+        precondition(NSApp.appearance == nil && previewAppearance(named: "dark")?.name == .darkAqua && previewAppearance(named: "light")?.name == .aqua && previewAppearance(named: "other") == nil)
+        var lightBackground: CGFloat = 0, darkBackground: CGFloat = 0
+        NSAppearance(named: .aqua)!.performAsCurrentDrawingAppearance { lightBackground = NSColor.windowBackgroundColor.usingColorSpace(.deviceRGB)!.redComponent }
+        NSAppearance(named: .darkAqua)!.performAsCurrentDrawingAppearance { darkBackground = NSColor.windowBackgroundColor.usingColorSpace(.deviceRGB)!.redComponent }
+        precondition(lightBackground > darkBackground)
+        let appearanceApp = App(); appearanceApp.preview = true; appearanceApp.previewAppearance = previewAppearance(named: "dark")
+        appearanceApp.buildWindow(); appearanceApp.store = previewStore(); appearanceApp.refreshList()
+        precondition(appearanceApp.window.appearance?.name == .darkAqua && appearanceApp.window.contentView?.subviews.first is NSStackView)
+        precondition(appearanceApp.connectButton.bezelStyle == .rounded && appearanceApp.reauthButton.bezelStyle == .rounded)
+        precondition(appearanceApp.createButton.bezelStyle == .rounded && appearanceApp.connectionTitle.textColor == .labelColor)
+        let appearanceRoot = appearanceApp.window.contentView?.subviews.first as? NSStackView
+        precondition(appearanceRoot?.arrangedSubviews.first is NSVisualEffectView && appearanceRoot?.arrangedSubviews.last is SemanticBackgroundView)
+        let selectedRows = appearanceApp.listStack.arrangedSubviews.compactMap { $0 as? NSButton }
+        precondition(selectedRows.count == 3 && selectedRows[0].state == .on && selectedRows[1].state == .off)
+        appearanceApp.window.orderOut(nil)
         let versionParts = BuildVersion.display.split(separator: "-")
         precondition((versionParts.count == 2 || (versionParts.count == 3 && versionParts[2] == "dirty")) && versionParts[1].count == 8)
         let versionItem = versionMenuItem()
@@ -809,7 +821,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextFieldD
             let status = StatusReply(state: state, reachable: false, autostart: true, message: "", profileID: a.id)
             precondition(!shouldConnectOnOpen(enabled: true, selectedID: a.id, status: status))
         }
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("sn-vpn-selftest-\(UUID().uuidString)")
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("fortireplace-selftest-\(UUID().uuidString)")
         try! FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
         let fortiFile = root.appendingPathComponent("vpn.plist")
@@ -853,10 +865,10 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextFieldD
         precondition((try! Data(contentsOf: newFile)) == corrupt)
         let parsed = try! StatusReply.parse(Data(#"{"state":"connected","reachable":true,"autostart":true,"message":"ok","profile_id":"primary"}"#.utf8))
         precondition(parsed.profileID == "primary")
-        let requirement = "identifier \"local.snvpn.helper\" and cdhash H\"" + String(repeating: "a", count: 40) + "\""
+        let requirement = "identifier \"\(Brand.helperLabel)\" and cdhash H\"" + String(repeating: "a", count: 40) + "\""
         precondition(VPNHelperClient.validRequirement(requirement))
         precondition(!VPNHelperClient.validRequirement(requirement + "\n"))
-        precondition(!VPNHelperClient.validRequirement("identifier \"local.snvpn.helper\""))
+        precondition(!VPNHelperClient.validRequirement("identifier \"\(Brand.helperLabel)\""))
         precondition(!VPNHelperClient.validRequirement(requirement.replacingOccurrences(of: "helper", with: "desktop")))
         let activePreview = previewStore(), activePreviewStatus = previewStatus("connected")
         precondition(activePreview.selectedId == "11111111-1111-4111-8111-111111111111")
@@ -898,7 +910,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextFieldD
         let lock = lockIcon(Self.gold, size: NSSize(width: 18, height: 18)); precondition(lock?.isTemplate == false)
         print("self-test: OK")
     }
-    static func lockIcon(_ color: NSColor, size: NSSize, description: String = "SN VPN") -> NSImage? {
+    static func lockIcon(_ color: NSColor, size: NSSize, description: String = Brand.displayName) -> NSImage? {
         guard let symbol = NSImage(systemSymbolName: "lock.fill", accessibilityDescription: description),
               let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 36, pixelsHigh: 36, bitsPerSample: 8,
                                             samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
@@ -942,7 +954,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextFieldD
 }
 
 @main
-enum SNVPNMain {
+enum AppMain {
     static func main() {
         let app = NSApplication.shared
         let delegate = App(); app.delegate = delegate; app.setActivationPolicy(.accessory)

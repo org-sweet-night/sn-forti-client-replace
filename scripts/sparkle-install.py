@@ -13,6 +13,8 @@ import tempfile
 import zipfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from branding import BRAND
+
 _spec = importlib.util.spec_from_file_location('package_update', Path(__file__).with_name('package-update.py'))
 package_update = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(package_update)
@@ -116,7 +118,7 @@ def install(archive):
         safe_root_path(archive, allow_sticky=True)
         uid = trusted_uid()
         safe_root_path(control)
-        with tempfile.TemporaryDirectory(prefix='snvpn-sparkle-', dir=TMPDIR) as temporary:
+        with tempfile.TemporaryDirectory(prefix=BRAND.temporary_prefix + '-sparkle-', dir=TMPDIR) as temporary:
             release = validate_release(archive, Path(temporary) / 'release', uid)
             updater = release / 'scripts/update.py'
             if transaction_exists():
@@ -135,20 +137,20 @@ def install(archive):
             restore_attempted = True
             if not control_action(uid, control, 'start'):
                 raise RuntimeError('update completed, but VPN could not be restored')
-        print('SN VPN managed update installed and verified.')
+        print(BRAND.display_name + ' managed update installed and verified.')
         return 0
     except Exception as error:
         if uid is not None and was_active and not restore_attempted and not transaction_exists():
             restore_attempted = True
             if not control_action(uid, control, 'start'):
                 error = RuntimeError(str(error) + '; VPN connection could not be restored')
-        print('SN VPN update failed: ' + str(error), file=sys.stderr)
+        print(BRAND.display_name + ' update failed: ' + str(error), file=sys.stderr)
         return 1
 
 
 def main(argv):
     if os.geteuid() != 0:
-        print('SN VPN update failed: installer administrator privileges required', file=sys.stderr)
+        print(BRAND.display_name + ' update failed: installer administrator privileges required', file=sys.stderr)
         return 1
     if len(argv) != 2 or argv[0] != '--payload':
         print('usage: sparkle-install.py --payload RELEASE.zip', file=sys.stderr)

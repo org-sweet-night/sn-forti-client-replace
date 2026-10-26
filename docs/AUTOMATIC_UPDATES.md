@@ -31,7 +31,7 @@ SNVPN_RELEASE_ROOT=/path/to/verified-release SNVPN_REAUTHORIZE_CREDENTIALS=1 bas
 
 ## 公开更新源与信任
 
-固定 feed 为 `https://github.com/org-sweet-night/sn-forti-client-replace/releases/latest/download/appcast.xml`。当前仓库需要由所有者设为 public；私有仓库的匿名 404 不会被解释为“已是最新版”。客户端没有内置 GitHub 令牌。
+feed 由 `app/update-config.json` 的 `feed_url` 指定，必须是 GitHub Releases 的 HTTPS appcast 地址；构建会将更新源和公开验证密钥写入 App。发布仓库需要允许匿名读取；私有仓库的匿名 404 不会被解释为“已是最新版”。客户端没有内置 GitHub 令牌。
 
 主 App 的 Info.plist 固定签名公钥和安全选项，更新程序只接受同一 GitHub 仓库 HTTPS Release 地址下的完整 `.pkg`，拒绝只替换 `.app` 的更新。包和包含发行说明的 feed 均要求 Ed25519 签名，安装包在解包前验签。没有 Developer ID 证书仍可使用该签名链；它不能代替 Apple 公证或首次安装时的 Gatekeeper 放行。
 
@@ -46,9 +46,9 @@ bash scripts/prepare-sparkle.sh
 python3 scripts/setup-update-signing.py --create
 ```
 
-官方 `generate_keys` 将私钥保存在当前用户登录钥匙串，专用 account 为 `local.snvpn.release-signing`。获准执行 `--create` 后，脚本将公钥写入 `app/update-config.json`，并把私钥和公钥备份到统一的 `~/.ssh/github.release-key/` 目录；目录权限 `700`，文件权限 `600`。已有不同密钥的文件会保留并报错，不被覆盖。保管好备份；无 Apple Developer ID 回退链时，丢失密钥不能靠随意换公钥继续更新已有客户端。
+官方 `generate_keys` 将私钥保存在当前用户登录钥匙串，专用 account 为 `local.<identifier>vpn.release-signing`，其中 `identifier` 来自 `app/brand.json`。获准执行 `--create` 后，脚本将公钥写入 `app/update-config.json`，并把私钥和公钥备份到统一的 `~/.ssh/github.release-key/` 目录；目录权限 `700`，文件权限 `600`。已有不同密钥的文件会保留并报错，不被覆盖。保管好备份；无 Apple Developer ID 回退链时，丢失密钥不能靠随意换公钥继续更新已有客户端。
 
-私钥文件为 `~/.ssh/github.release-key/sn-forti-client-replace-update-ed25519.key`，公开验证密钥为同名 `.pub`。它采用 Sparkle 的密钥格式。迁移新 Mac 时用 `generate_keys --account local.snvpn.release-signing -f` 导入该私钥，再运行 `setup-update-signing.py --check` 核对项目公钥。私钥文件不进入源码仓库、安装包或 GitHub 资产。
+备份文件名为 `<发布仓库名>-update-ed25519.key`，公开验证密钥为同名 `.pub`；发布仓库名取自配置的更新源。它采用 Sparkle 的密钥格式。迁移新 Mac 时用 `generate_keys --account local.<identifier>vpn.release-signing -f` 导入该私钥，再运行 `setup-update-signing.py --check` 核对项目公钥。私钥文件不进入源码仓库、安装包或 GitHub 资产。
 
 未设置永久公钥时，本地构建的在线更新明确禁用，发布打包拒绝继续。通过 `SNVPN_UPDATE_CONFIG` 指定临时配置的构建标记为测试构建，也不能发布。
 

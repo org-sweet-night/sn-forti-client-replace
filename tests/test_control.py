@@ -103,7 +103,7 @@ class Tests(unittest.TestCase):
             launch.assert_called_once_with(['disable', control.JOB])
 
     def test_input_boundaries(self):
-        valid = {'name': 'SN-IDC', 'server': 'vpn.example.test', 'port': 443, 'username': 'person'}
+        valid = {'name': 'Office VPN', 'server': 'vpn.example.test', 'port': 443, 'username': 'person'}
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'input.json'
             path.write_text(json.dumps(valid))

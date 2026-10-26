@@ -2,14 +2,16 @@
 set -euo pipefail
 umask 022
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-APP="/Applications/SN VPN.app"
+BRAND_SHELL="$(/usr/bin/python3 "$ROOT/scripts/branding.py" --shell)"
+eval "$BRAND_SHELL"
+APP="/Applications/$APP_NAME.app"
 RUNTIME="/Library/Application Support/Local VPN"
 
 if [[ "$EUID" -eq 0 ]]; then
   echo '请以普通用户运行 bash scripts/install.sh；安装阶段会请求管理员授权。' >&2
   exit 1
 fi
-if [[ -e "$APP" || -L "$APP" || -e "$RUNTIME" || -L "$RUNTIME" || -e /Library/LaunchDaemons/local.vpn.autoconnect.plist || -L /Library/LaunchDaemons/local.vpn.autoconnect.plist || -e /Library/LaunchDaemons/local.snvpn.helper.plist || -L /Library/LaunchDaemons/local.snvpn.helper.plist ]]; then
+if [[ -e "$APP" || -L "$APP" || -e "$RUNTIME" || -L "$RUNTIME" || -e /Library/LaunchDaemons/local.vpn.autoconnect.plist || -L /Library/LaunchDaemons/local.vpn.autoconnect.plist || -e /Library/LaunchDaemons/$HELPER_LABEL.plist || -L /Library/LaunchDaemons/$HELPER_LABEL.plist ]]; then
   echo '检测到已有 App、运行环境或启动项；未覆盖。请按 README 的升级步骤处理。' >&2
   exit 1
 fi
@@ -25,12 +27,14 @@ else
   bash "$ROOT/app/build.sh"
 fi
 
+/usr/bin/python3 "$ROOT/scripts/branding.py" --check-built "$ROOT/dist/$APP_NAME.app"
+
 sudo -v
 STEP='初始化运行环境'
 trap 'echo "安装在${STEP}阶段中止；已完成的文件保留。请按 README 的维护入口检查并完成安装。" >&2' ERR
 sudo /usr/bin/python3 -I "$ROOT/scripts/install.py" --initialize
 STEP='复制 App'
-sudo /usr/bin/ditto "$ROOT/dist/SN VPN.app" "$APP"
+sudo /usr/bin/ditto "$ROOT/dist/$APP_NAME.app" "$APP"
 STEP='安装受限助手'
 sudo /usr/bin/python3 -I "$ROOT/scripts/install.py" --install-helper "$APP" "$(id -u)"
 trap - ERR

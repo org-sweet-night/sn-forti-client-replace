@@ -2,10 +2,15 @@
 set -euo pipefail
 umask 077
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+BRAND_SHELL="$(/usr/bin/python3 "$ROOT/scripts/branding.py" --shell)"
+eval "$BRAND_SHELL"
 MAINTENANCE_ROOT="$ROOT"
-if [[ -n "${SNVPN_RELEASE_ROOT:-}" ]]; then
-  ROOT="$SNVPN_RELEASE_ROOT"
+RELEASE_ROOT_KEY="${ENV_PREFIX}_RELEASE_ROOT"
+if [[ -n "${!RELEASE_ROOT_KEY:-}" ]]; then
+  ROOT="${!RELEASE_ROOT_KEY}"
   [[ -f "$ROOT/RELEASE.json" ]] || { echo '指定的发布目录缺少 RELEASE.json；未执行升级。' >&2; exit 1; }
+  BRAND_SHELL="$(/usr/bin/python3 "$ROOT/scripts/branding.py" --shell)"
+  eval "$BRAND_SHELL"
 fi
 MODE="${1:---apply}"
 if [[ "$EUID" -eq 0 || "$#" -gt 1 || ( "$MODE" != --apply && "$MODE" != --check && "$MODE" != --recover && "$MODE" != --cleanup ) ]]; then
@@ -17,8 +22,10 @@ if [[ -f "$ROOT/RELEASE.json" && ( "$MODE" == --apply || "$MODE" == --check ) ]]
   /usr/bin/python3 "$ROOT/scripts/release.py" --verify "$ROOT"
 fi
 
-REAUTHORIZE="${SNVPN_REAUTHORIZE_CREDENTIALS:-0}"
-RESTORE="${SNVPN_RESTORE_CONNECTION:-0}"
+REAUTHORIZE_CREDENTIALS_KEY="${ENV_PREFIX}_REAUTHORIZE_CREDENTIALS"
+RESTORE_CONNECTION_KEY="${ENV_PREFIX}_RESTORE_CONNECTION"
+REAUTHORIZE="${!REAUTHORIZE_CREDENTIALS_KEY:-0}"
+RESTORE="${!RESTORE_CONNECTION_KEY:-0}"
 if [[ "$REAUTHORIZE" != 0 && ( "$REAUTHORIZE" != 1 || "$MODE" != --apply ) ]]; then
   echo '凭据重新授权仅支持显式升级操作。' >&2
   exit 1
@@ -29,10 +36,11 @@ if [[ "$RESTORE" != 0 && ( "$RESTORE" != 1 || "$REAUTHORIZE" != 1 ) ]]; then
 fi
 
 # Stage only release inputs, so administrator tools need no external-volume access.
-STAGE="$(mktemp -d /private/tmp/snvpn-update.XXXXXX)"
+STAGE="$(mktemp -d "/private/tmp/$TEMPORARY_PREFIX-update.XXXXXX")"
 trap 'rm -rf "$STAGE"' EXIT
-mkdir -p "$STAGE/scripts" "$STAGE/service" "$STAGE/dist"
-for name in install.py update.py; do
+mkdir -p "$STAGE/scripts" "$STAGE/service" "$STAGE/dist" "$STAGE/app"
+cp "$ROOT/app/brand.json" "$STAGE/app/brand.json"
+for name in install.py update.py branding.py; do
   cp "$ROOT/scripts/$name" "$STAGE/scripts/$name"
 done
 UPDATER=update.py
@@ -46,7 +54,7 @@ if [[ "$MODE" != --recover && "$MODE" != --cleanup ]]; then
   for name in control.py connect.py setup.py vpnc-script; do
     cp "$ROOT/service/$name" "$STAGE/service/$name"
   done
-  /usr/bin/ditto "$ROOT/dist/SN VPN.app" "$STAGE/dist/SN VPN.app"
+  /usr/bin/ditto "$ROOT/dist/$APP_NAME.app" "$STAGE/dist/$APP_NAME.app"
   /usr/bin/ditto "$ROOT/dist/service" "$STAGE/dist/service"
 fi
 /usr/bin/osascript - "$STAGE" "$MODE" "$(id -u)" "$UPDATER" "$RESTORE" <<'APPLESCRIPT'
@@ -58,5 +66,5 @@ on run argv
 end run
 APPLESCRIPT
 if [[ "$MODE" == --apply ]]; then
-  /usr/bin/open "/Applications/SN VPN.app"
+  /usr/bin/open "/Applications/$APP_NAME.app"
 fi

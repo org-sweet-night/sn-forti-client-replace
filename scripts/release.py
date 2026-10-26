@@ -11,8 +11,11 @@ import shutil
 import subprocess
 import sys
 
-ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import branding
+from branding import BRAND
+
+ROOT = Path(__file__).resolve().parents[1]
 import install
 
 
@@ -36,16 +39,17 @@ def inventory(root):
 def check_binaries(root):
     if platform.system() != 'Darwin' or platform.machine() != 'arm64' or int(platform.mac_ver()[0].split('.')[0]) < 15:
         raise RuntimeError('This release requires Apple Silicon and macOS 15 or later')
-    app = root / 'dist/SN VPN.app'
+    app = root / ('dist/' + BRAND.app_name + '.app')
+    branding.check_built(app)
     plist = plistlib.loads((app / 'Contents/Info.plist').read_bytes())
     if plist['LSMinimumSystemVersion'] != '15.0':
         raise RuntimeError('incorrect application minimum system version')
-    binaries = [app / 'Contents/MacOS/SN VPN',
-                app / 'Contents/Library/HelperTools/local.snvpn.helper']
+    binaries = [app / ('Contents/MacOS/' + BRAND.app_name),
+                app / ('Contents/Library/HelperTools/' + BRAND.helper_label)]
     binaries += list((root / 'dist/service').glob('vpn-*'))
     runtime = root / 'dist/service/runtime'
     binaries += [p for p in runtime.iterdir() if p.is_file()]
-    updater = app / 'Contents/Helpers/SN VPN Updater.app'
+    updater = app / ('Contents/Helpers/' + BRAND.updater_name + '.app')
     framework = updater / 'Contents/Frameworks'
     if updater.exists():
         for path in updater.rglob('*'):
@@ -72,7 +76,7 @@ def check_binaries(root):
                 raise RuntimeError('unbundled dependency: ' + path.name)
         run('/usr/bin/codesign', '--verify', '--strict', str(path))
     run('/usr/bin/codesign', '--verify', '--deep', '--strict', str(app))
-    install.code_signature(app, 'local.snvpn.desktop')
+    install.code_signature(app, BRAND.bundle_id)
     install.code_signature(app / install.APP_HELPER, install.HELPER_LABEL)
     if updater.exists():
         run('/usr/bin/codesign', '--verify', '--deep', '--strict', str(updater))
@@ -80,7 +84,7 @@ def check_binaries(root):
         document = re.search(r'<plist(?:\s[^>]*)?>.*?</plist>', entitlements, re.S)
         if not document or plistlib.loads(document.group().encode()) != {'com.apple.security.cs.disable-library-validation': True}:
             raise RuntimeError('unexpected updater entitlements')
-        run(str(updater / 'Contents/MacOS/SN VPN Updater'), '--self-test')
+        run(str(updater / ('Contents/MacOS/' + BRAND.updater_name)), '--self-test')
     run(str(binaries[0]), '--self-test')
     run(str(binaries[1]), '--self-test')
     version = run(str(runtime / 'openconnect'), '--version')
@@ -98,31 +102,34 @@ def verify(root):
 
 
 def package():
-    plist = plistlib.loads((ROOT / 'dist/SN VPN.app/Contents/Info.plist').read_bytes())
-    if plist.get('SNVPNUpdateTestConfiguration'):
+    branding.check_built(ROOT / 'dist' / (BRAND.app_name + '.app'))
+    plist = plistlib.loads((ROOT / ('dist/' + BRAND.app_name + '.app/Contents/Info.plist')).read_bytes())
+    if plist.get(BRAND.test_key):
         raise RuntimeError('test update configuration cannot be released')
     if not plist.get('SUPublicEDKey'):
         raise RuntimeError('configure the permanent update signing public key before releasing')
-    name = 'SN-VPN-' + plist['CFBundleShortVersionString'] + '-macOS-arm64'
+    name = BRAND.archive_prefix + '-' + plist['CFBundleShortVersionString'] + '-macOS-arm64'
     stage = ROOT / 'dist' / name
     if stage.exists():
         raise RuntimeError('release staging already exists')
     stage.mkdir()
     try:
         for folder, names in {
-            'scripts': ['install.sh', 'install.py', 'update.sh', 'update.py', 'release.py'],
+            'scripts': ['install.sh', 'install.py', 'update.sh', 'update.py', 'release.py', 'branding.py'],
             'service': ['connect.py', 'control.py', 'setup.py', 'vpnc-script'],
             'docs': ['DISTRIBUTION.md', 'THIRD_PARTY_NOTICES.md', 'AUTOMATIC_UPDATES.md'],
         }.items():
             (stage / folder).mkdir()
             for filename in names:
                 shutil.copy2(ROOT / folder / filename, stage / folder / filename)
+        (stage / 'app').mkdir()
+        shutil.copy2(ROOT / 'dist' / (BRAND.app_name + '.app') / 'Contents/Resources/brand.json', stage / 'app/brand.json')
         shutil.copytree(ROOT / 'LICENSES', stage / 'LICENSES')
         shutil.copy2(ROOT / 'dist/sparkle/LICENSE', stage / 'LICENSES/Sparkle.txt')
         shutil.copytree(ROOT / 'dist/release-runtime/sources', stage / 'sources')
         shutil.copytree(ROOT / 'dist/release-runtime/licenses', stage / 'runtime-licenses')
         (stage / 'dist/service').mkdir(parents=True)
-        shutil.copytree(ROOT / 'dist/SN VPN.app', stage / 'dist/SN VPN.app', symlinks=True)
+        shutil.copytree(ROOT / ('dist/' + BRAND.app_name + '.app'), stage / ('dist/' + BRAND.app_name + '.app'), symlinks=True)
         shutil.copytree(ROOT / 'dist/release-runtime/runtime', stage / 'dist/service/runtime')
         for helper in ('vpn-keychain', 'vpn-profile-keychain', 'vpn-sleep-setting'):
             shutil.copy2(ROOT / 'dist/service' / helper, stage / 'dist/service' / helper)
@@ -133,7 +140,7 @@ def package():
                             'bash scripts/' + command + '\nresult=$?\n'
                             'read -r -p "Press Return to close."\nexit "$result"\n')
             path.chmod(0o755)
-        metadata = {'version': plist['CFBundleShortVersionString'], 'build': plist['SNVPNBuildNumber'],
+        metadata = {'version': plist['CFBundleShortVersionString'], 'build': plist[BRAND.build_key],
                     'bundle_version': plist['CFBundleVersion'],
                     'minimum_macos': '15.0', 'architecture': 'arm64', 'signing': 'ad-hoc; not notarized',
                     'source_commit': run('git', '-C', str(ROOT), 'rev-parse', 'HEAD').strip(),

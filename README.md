@@ -6,7 +6,25 @@ FortiReplace 使用自带的 OpenConnect 连接 Fortinet / FortiGate SSL VPN，�
 
 本项目替代的是 **FortiClient 的基础 SSL VPN 连接功能**。FortiClient 的 IPsec、企业身份集成、EMS、ZTNA 和终端防护不在当前实现范围内。本项目为独立的非官方客户端。
 
-应用名称为 **SN VPN**，构建产物为 `dist/SN VPN.app`。FortiReplace 是项目名。
+FortiReplace 是项目名。应用显示名称、应用标识和构建产物名称由 `app/brand.json` 在编译时确定。
+
+## 品牌配置
+
+`app/brand.json` 必须明确提供两个字段，仓库中的配置为：
+
+```json
+{
+  "identifier": "sn",
+  "brand": "SweetNight"
+}
+```
+
+- `identifier` 使用小写英文字母开头，后接小写字母或数字，最多 24 个字符。它决定应用目录、Bundle ID、助手标识、用户配置目录、签名账户和维护环境变量前缀。
+- `brand` 是界面品牌名称，应用显示为“品牌名称 VPN”。上述配置显示为 **SweetNight VPN**，产物为 `dist/SN VPN.app`。
+
+构建读取这份配置，生成 Swift 常量，并将配置副本随 App 一起签名；运行中的 App 不读取仓库配置。配置文件缺失、缺少字段或字段无效时，构建失败，不使用源码默认值。修改后需要重新构建。
+
+为已有安装升级时，保持 `identifier` 一致；不同标识对应不同的应用身份。更新源和公开验证密钥另由 `app/update-config.json` 配置。下文路径和命令使用仓库配置对应的名称。
 
 ## 目录结构
 
@@ -170,7 +188,7 @@ bash scripts/update.sh --cleanup
 
 清理先核验当前安装和凭据访问，仅处理固定清单；清理成功不表示已升级到当前发布产物。
 
-升级前先断开 VPN 并退出 SN VPN，再执行：
+升级前先断开 VPN 并退出 FortiReplace，再执行：
 
 ```bash
 bash scripts/update.sh

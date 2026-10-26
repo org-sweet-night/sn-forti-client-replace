@@ -61,6 +61,8 @@ class ReleaseTests(unittest.TestCase):
             root = Path(directory)
             contents = root / 'dist/SN VPN.app/Contents'
             contents.mkdir(parents=True)
+            (contents / "Resources").mkdir()
+            (contents / "Resources/brand.json").write_text(json.dumps(release.BRAND.raw))
             (contents / 'Info.plist').write_bytes(plistlib.dumps({'LSMinimumSystemVersion': '15.0'}))
             (root / 'dist/service/runtime').mkdir(parents=True)
             def output(*args):

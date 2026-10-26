@@ -27,6 +27,8 @@ class UpdateCheckTests(unittest.TestCase):
             (path / name).write_text(name)
         (self.artifacts / 'runtime/openconnect').write_text('runtime')
         (self.source_app / 'Contents').mkdir()
+        (self.source_app / 'Contents/Resources').mkdir()
+        (self.source_app / 'Contents/Resources/brand.json').write_text(json.dumps(update.BRAND.raw))
         (self.source_app / 'Contents/bin').write_text('app')
         (self.source_app / 'Contents/Library/HelperTools').mkdir(parents=True)
         (self.source_app / 'Contents/Library/HelperTools/local.snvpn.helper').write_text('helper')
@@ -50,6 +52,15 @@ class UpdateCheckTests(unittest.TestCase):
             (self.target / name).write_text(name)
         (self.target / 'runtime').mkdir(); (self.target / 'runtime/openconnect').write_text('runtime')
         (self.app / 'Contents').mkdir(); (self.app / 'Contents/bin').write_text('app')
+
+    def test_source_branding_is_required_and_must_match(self):
+        config = self.source_app / 'Contents/Resources/brand.json'
+        config.unlink()
+        with self.assertRaises(FileNotFoundError):
+            update.expected()
+        config.write_text(json.dumps({'identifier': 'other', 'brand': 'Other'}))
+        with self.assertRaisesRegex(ValueError, 'branding differs'):
+            update.expected()
 
     def test_check_matches_all_shipped_files_and_reports_residue_by_name_only(self):
         (self.target / 'setup-status.log').write_text('SECRET MUST NOT PRINT')

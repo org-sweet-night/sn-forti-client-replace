@@ -14,9 +14,15 @@ import subprocess
 import tempfile
 import xml.etree.ElementTree as ET
 import zipfile
+import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-REPO = 'org-sweet-night/sn-forti-client-replace'
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from branding import BRAND
+_config_spec = importlib.util.spec_from_file_location('update_config', ROOT / 'scripts/configure-updates.py')
+_config_module = importlib.util.module_from_spec(_config_spec)
+_config_spec.loader.exec_module(_config_module)
+REPO = _config_module.repository(_config_module.FEED)
 NS = 'http://www.andymatuschak.org/xml-namespaces/sparkle'
 ET.register_namespace('sparkle', NS)
 
@@ -39,7 +45,7 @@ def metadata(archive, package, tag):
             raise ValueError('invalid release manifest')
         release = json.loads(bundle.read(names[0]))
         prefix = names[0][:-len('RELEASE.json')]
-        info = plistlib.loads(bundle.read(prefix + 'dist/SN VPN.app/Contents/Info.plist'))
+        info = plistlib.loads(bundle.read(prefix + 'dist/' + BRAND.app_name + '.app/Contents/Info.plist'))
     for field in ('version', 'build', 'minimum_macos', 'architecture'):
         if data.get(field) != release.get(field):
             raise ValueError('package metadata differs from release: ' + field)
@@ -47,14 +53,14 @@ def metadata(archive, package, tag):
     if data.get('bundle_version', data['build']) != bundle_version:
         raise ValueError('package metadata differs from release bundle version')
     if release.get('bundle_version') and (bundle_version != release['version']
-            or info.get('CFBundleVersion') != bundle_version or info.get('SNVPNBuildNumber') != release['build']):
+            or info.get('CFBundleVersion') != bundle_version or info.get(BRAND.build_key) != release['build']):
         raise ValueError('Sparkle comparison version differs from release app')
     if (not re.fullmatch(r'v[1-9][0-9]*\.[0-9]+\.[0-9]+', tag) or tag != 'v' + release['version']
             or data.get('tag') != tag or not re.fullmatch(r'[1-9][0-9]*', release['build'])
             or release['minimum_macos'] != '15.0' or release['architecture'] != 'arm64'
             or data.get('package_sha256') != digest(package) or data.get('release_zip_sha256') != digest(archive)):
         raise ValueError('package/archive/tag binding failed')
-    if info.get('SNVPNUpdateTestConfiguration') or not info.get('SUPublicEDKey'):
+    if info.get(BRAND.test_key) or not info.get('SUPublicEDKey'):
         raise ValueError('cannot publish an unconfigured or test updater')
     return release, info
 
@@ -62,10 +68,10 @@ def metadata(archive, package, tag):
 def feed(version, package, tag, signature, notes):
     rss = ET.Element('rss', version='2.0')
     channel = ET.SubElement(rss, 'channel')
-    ET.SubElement(channel, 'title').text = 'SN VPN Updates'
+    ET.SubElement(channel, 'title').text = BRAND.display_name + ' Updates'
     ET.SubElement(channel, 'link').text = 'https://github.com/' + REPO + '/releases'
     item = ET.SubElement(channel, 'item')
-    ET.SubElement(item, 'title').text = 'SN VPN ' + version['version']
+    ET.SubElement(item, 'title').text = BRAND.display_name + ' ' + version['version']
     ET.SubElement(item, '{' + NS + '}version').text = version.get('bundle_version', version['build'])
     ET.SubElement(item, '{' + NS + '}shortVersionString').text = version['version']
     ET.SubElement(item, '{' + NS + '}minimumSystemVersion').text = version['minimum_macos'] + '.0'
@@ -171,7 +177,7 @@ def publish(output, tag, archive, notes):
         run('git', '-C', ROOT, 'ls-remote', '--exit-code', 'origin', 'refs/tags/' + tag)
         # On failure, retain any partial draft and let a later explicit invocation inspect it.
         run('gh', 'release', 'create', tag, '--repo', REPO, '--verify-tag', '--draft',
-            '--title', 'SN VPN ' + tag[1:], '--notes-file', notes, *assets)
+            '--title', BRAND.display_name + ' ' + tag[1:], '--notes-file', notes, *assets)
         existing = release_for_tag(tag)
     if existing is None or not existing['isDraft']:
         raise ValueError('expected draft release; no assets changed')

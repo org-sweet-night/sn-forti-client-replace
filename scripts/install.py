@@ -11,6 +11,9 @@ import subprocess
 import sys
 import tempfile
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from branding import BRAND
+
 ROOT = Path(__file__).resolve().parent.parent
 SOURCE = ROOT / 'service'
 ARTIFACTS = ROOT / 'dist' / 'service'
@@ -20,17 +23,17 @@ DAEMON = TARGET / (LABEL + '.plist')
 LEGACY_DAEMON = Path('/Library/LaunchDaemons') / (LABEL + '.plist')
 CONTROL = TARGET / 'control.py'
 ARGS = ['/usr/bin/python3', '-I', str(TARGET / 'connect.py')]
-HELPER_LABEL = 'local.snvpn.helper'
+HELPER_LABEL = BRAND.helper_label
 HELPER = TARGET / 'vpn-helper'
 HELPER_POLICY = TARGET / 'helper-policy.plist'
 HELPER_DAEMON = Path('/Library/LaunchDaemons') / (HELPER_LABEL + '.plist')
-APP_PATH = Path('/Applications/SN VPN.app')
-APP_HELPER = Path('Contents/Library/HelperTools/local.snvpn.helper')
+APP_PATH = Path(BRAND.install_path)
+APP_HELPER = Path('Contents/Library/HelperTools') / BRAND.helper_label
 
 
 def safe_framework_link(path, tree_root):
     """Allow only relative links confined to the bundled Sparkle framework."""
-    suffix = Path('Contents/Helpers/SN VPN Updater.app/Contents/Frameworks/Sparkle.framework').parts
+    suffix = Path(('Contents/Helpers/' + BRAND.updater_name + '.app/Contents/Frameworks/Sparkle.framework')).parts
     try:
         relative = path.relative_to(tree_root)
         for index in range(len(relative.parts) - len(suffix)):
@@ -168,7 +171,7 @@ def helper_launch_state():
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
     disabled = subprocess.run(['/bin/launchctl', 'print-disabled', 'system'],
                               stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=True)
-    values = re.findall(rb'"local\.snvpn\.helper"\s*=>\s*([^\s;,}]+)', disabled.stdout)
+    values = re.findall(rb'"' + re.escape(HELPER_LABEL.encode()) + rb'"\s*=>\s*([^\s;,}]+)', disabled.stdout)
     states = {b'enabled': False, b'disabled': True, b'true': True, b'false': False}
     if not values:
         return loaded, False
@@ -189,7 +192,7 @@ def helper_install(app_arg, uid_arg, already_locked=False):
     check_app_path(app_helper, owners)
     if not stat.S_ISREG(app_helper.lstat().st_mode):
         raise RuntimeError('unexpected helper executable')
-    app_hash = code_signature(APP_PATH, 'local.snvpn.desktop')
+    app_hash = code_signature(APP_PATH, BRAND.bundle_id)
     code_signature(app_helper, HELPER_LABEL)
     if not stat.S_ISDIR(safe_installed(TARGET).st_mode):
         raise RuntimeError('unexpected installation')
@@ -219,7 +222,7 @@ def helper_install(app_arg, uid_arg, already_locked=False):
             'StandardOutPath': '/dev/null', 'StandardErrorPath': '/dev/null',
         }
         policy = {'version': 1, 'userID': uid,
-                  'clientRequirement': 'identifier "local.snvpn.desktop" and cdhash H"' + app_hash + '"'}
+                  'clientRequirement': 'identifier "' + BRAND.bundle_id + '" and cdhash H"' + app_hash + '"'}
         backups = {path: previous[path] for path in paths}
         try:
             if loaded:

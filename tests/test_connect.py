@@ -37,12 +37,16 @@ class Checks(unittest.TestCase):
                 self.assertEqual(runner.credential_user_id(), 501)
                 self.assertEqual(runner.credential_run_command({}), [
                     '/bin/launchctl', 'asuser', '501', str(runner.BASE / 'vpn-keychain'), '--read'])
+                configured = dict(policy, clientRequirement='identifier "local.demovpn.desktop" and cdhash H"' + 'b' * 40 + '"')
+                policy_path.write_bytes(plistlib.dumps(configured))
+                self.assertEqual(runner.credential_user_id(), 501)
 
                 for invalid in (
                         dict(policy, userID=True), dict(policy, userID=0),
                         dict(policy, userID=2**32 - 1), dict(policy, version=2),
                         dict(policy, version=True),
-                        dict(policy, clientRequirement='allow any')):
+                        dict(policy, clientRequirement='allow any'),
+                        dict(policy, clientRequirement='identifier "unrelated.desktop" and cdhash H"' + 'a' * 40 + '"')):
                     policy_path.write_bytes(plistlib.dumps(invalid))
                     with self.assertRaises(ValueError):
                         runner.credential_user_id()

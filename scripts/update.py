@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""Transactional updater for the managed SN VPN app and runtime."""
+"""Transactional updater for the managed VPN app and runtime."""
 import fcntl
 import hashlib
 import json
@@ -15,10 +15,13 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import install
 
+import branding
+from branding import BRAND
+
 ROOT = Path(__file__).resolve().parent.parent
 SOURCE = ROOT / 'service'
 ARTIFACTS = ROOT / 'dist' / 'service'
-SOURCE_APP = ROOT / 'dist' / 'SN VPN.app'
+SOURCE_APP = ROOT / 'dist' / (BRAND.app_name + '.app')
 APP = install.APP_PATH
 RESIDUE = ('app-upgrade-backup', 'multi-profile-upgrade-backup', 'app-validation.json',
            'multi-profile-validation.json', 'validation.json', 'setup-status.log')
@@ -67,6 +70,7 @@ def digest(path):
 
 
 def expected():
+    branding.check_built(SOURCE_APP)
     files = {}
     for name in ('control.py', 'connect.py', 'setup.py', 'vpnc-script'):
         if not stat.S_ISREG(source_ok(SOURCE / name).st_mode):
@@ -121,13 +125,13 @@ def check(uid):
     mismatch = sorted(set(missing + extra + changed))
     integrity = []
     try:
-        app_hash = install.code_signature(APP, 'local.snvpn.desktop')
+        app_hash = install.code_signature(APP, BRAND.bundle_id)
         install.code_signature(APP / install.APP_HELPER, install.HELPER_LABEL)
         if install.HELPER.read_bytes() != (APP / install.APP_HELPER).read_bytes():
             integrity.append('helper_binary')
         policy = plistlib.loads(install.HELPER_POLICY.read_bytes())
         if (policy.get('userID') != uid or policy.get('clientRequirement') !=
-                'identifier "local.snvpn.desktop" and cdhash H"' + app_hash + '"'):
+                'identifier "' + BRAND.bundle_id + '" and cdhash H"' + app_hash + '"'):
             integrity.append('helper_policy')
         if plistlib.loads(install.HELPER_DAEMON.read_bytes()).get('ProgramArguments') != [str(install.HELPER)]:
             integrity.append('helper_daemon')
@@ -151,7 +155,7 @@ def check(uid):
     known = {'control.py', 'connect.py', 'setup.py', 'vpnc-script', 'vpn-keychain',
              'vpn-profile-keychain', 'runtime', 'control.lock', 'settings.json',
              'profiles.json', 'status.json', 'profiles', 'status', 'helper-policy.plist',
-             'vpn-helper', 'update-manifest.json', 'local.snvpn.helper.plist',
+             'vpn-helper', 'update-manifest.json', BRAND.helper_label + '.plist',
              'runner.lock', '.update-transaction', install.DAEMON.name} | set(RESIDUE)
     unknown = sorted(p.name for p in install.TARGET.iterdir() if p.name not in known)
     print(json.dumps({'managed_files': len(want), 'mismatches': mismatch,
@@ -182,7 +186,7 @@ def vpn_idle():
         raise RuntimeError('VPN service is active')
     if 'Could not find service' not in result.stderr + result.stdout:
         raise RuntimeError('unable to confirm VPN service is idle')
-    app = subprocess.run(['/usr/bin/pgrep', '-x', 'SN VPN'], stdout=subprocess.DEVNULL,
+    app = subprocess.run(['/usr/bin/pgrep', '-x', BRAND.app_name], stdout=subprocess.DEVNULL,
                          stderr=subprocess.DEVNULL)
     if app.returncode == 0:
         raise RuntimeError('VPN app is running')
@@ -393,7 +397,7 @@ def apply(uid):
     want = expected()
     subprocess.run([str(ARTIFACTS / 'runtime/openconnect'), '--version'], check=True, timeout=10,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    install.code_signature(SOURCE_APP, 'local.snvpn.desktop')
+    install.code_signature(SOURCE_APP, BRAND.bundle_id)
     install.code_signature(SOURCE_APP / install.APP_HELPER, install.HELPER_LABEL)
     if not stat.S_ISDIR(install.safe_installed(install.TARGET).st_mode): raise RuntimeError('unexpected installation')
     vpn_idle()
@@ -440,14 +444,14 @@ def apply(uid):
             install.atomic_bytes(prior_daemon, install.DAEMON, 0o644)
             if install.LEGACY_DAEMON.exists(): install.LEGACY_DAEMON.unlink()
             install.helper_install(str(APP), str(uid), already_locked=True)
-            install.code_signature(APP, 'local.snvpn.desktop')
+            install.code_signature(APP, BRAND.bundle_id)
             install.code_signature(APP / install.APP_HELPER, install.HELPER_LABEL)
-            app_hash = install.code_signature(APP, 'local.snvpn.desktop')
+            app_hash = install.code_signature(APP, BRAND.bundle_id)
             policy = plistlib.loads(install.HELPER_POLICY.read_bytes())
             helper_job = plistlib.loads(install.HELPER_DAEMON.read_bytes())
             if (install.HELPER.read_bytes() != (APP / install.APP_HELPER).read_bytes()
                     or policy.get('userID') != uid
-                    or policy.get('clientRequirement') != 'identifier "local.snvpn.desktop" and cdhash H"' + app_hash + '"'
+                    or policy.get('clientRequirement') != 'identifier "' + BRAND.bundle_id + '" and cdhash H"' + app_hash + '"'
                     or helper_job.get('Label') != install.HELPER_LABEL
                     or helper_job.get('ProgramArguments') != [str(install.HELPER)]
                     or plistlib.loads(install.DAEMON.read_bytes()).get('ProgramArguments') != install.ARGS):
@@ -505,11 +509,11 @@ def cleanup(uid):
         if transaction_path().exists() or transaction_path().is_symlink():
             raise RuntimeError('unfinished update transaction; recover before cleanup')
         managed_hashes(installed_map())
-        app_hash = install.code_signature(APP, 'local.snvpn.desktop')
+        app_hash = install.code_signature(APP, BRAND.bundle_id)
         install.code_signature(APP / install.APP_HELPER, install.HELPER_LABEL)
         policy = plistlib.loads(install.HELPER_POLICY.read_bytes())
         if (policy.get('userID') != uid or policy.get('clientRequirement') !=
-                'identifier "local.snvpn.desktop" and cdhash H"' + app_hash + '"'
+                'identifier "' + BRAND.bundle_id + '" and cdhash H"' + app_hash + '"'
                 or install.HELPER.read_bytes() != (APP / install.APP_HELPER).read_bytes()):
             raise RuntimeError('installed helper verification failed')
         install.validate_plist(install.DAEMON)
@@ -526,7 +530,7 @@ def cleanup(uid):
 
 def run_as_user(uid, argument):
     cmd = ['/bin/launchctl', 'asuser', str(uid), '/usr/bin/sudo', '-u', '#' + str(uid),
-           str(APP / 'Contents/MacOS/SN VPN'), *argument]
+           str(APP / ('Contents/MacOS/' + BRAND.app_name)), *argument]
     subprocess.run(cmd, check=True, timeout=30, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 

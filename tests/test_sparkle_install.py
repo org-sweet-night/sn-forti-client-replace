@@ -220,7 +220,7 @@ class SparkleInstallTests(unittest.TestCase):
         body = script.split("<<'PY'\n", 1)[1].split('\nPY\n', 1)[0]
 
         def fake_lstat(path):
-            mode = stat.S_IFREG | 0o644 if path.suffix in ('.py', '.zip') else stat.S_IFDIR | 0o755
+            mode = stat.S_IFREG | 0o644 if path.suffix in ('.py', '.zip', '.json') else stat.S_IFDIR | 0o755
             return os.stat_result((mode, 0, 0, 0, 0, 0, 0, 0, 0, 0))
 
         with tempfile.TemporaryDirectory() as directory, \
@@ -247,7 +247,7 @@ class SparkleInstallTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             calls = [json.loads(line) for line in record.read_text().splitlines()]
             self.assertEqual(calls[0], ['-IB', '-', str(base)])
-            self.assertEqual(calls[1], ['-IB', str(base / 'sparkle-install.py'),
+            self.assertEqual(calls[1], ['-IB', str(base / 'scripts/sparkle-install.py'),
                                       '--payload', str(base / 'release.zip')])
 
     def test_generated_postinstall_rejects_nested_resource_symlink(self):

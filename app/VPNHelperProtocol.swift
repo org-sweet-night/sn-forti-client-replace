@@ -1,11 +1,11 @@
 import Foundation
 
-@objc(SNVPNHelperProtocol) protocol VPNHelperProtocol {
+@objc(VPNHelperProtocol) protocol VPNHelperProtocol {
     func perform(_ operation: String, payload: Data?, reply: @escaping (Data) -> Void)
 }
 
 enum VPNHelperContract {
-    static let serviceName = "local.snvpn.helper"
+    static let serviceName = Brand.helperLabel
     static let installedBase = "/Library/Application Support/Local VPN"
     static let helperFile = "vpn-helper"
     static let maxPayload = 4096
